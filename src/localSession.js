@@ -281,7 +281,8 @@ class LocalSession extends EventEmitter {
   /** 镜像模式下从网页敲按键（白名单，避免把任意字符串当 tmux key 名执行） */
   sendKey(key) {
     if (this.kind !== 'mirror' && this.kind !== 'tui') throw new Error('仅镜像 / 原生 TUI 会话支持按键');
-    const allowed = ['Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BSpace', 'Space', 'C-c', 'C-d', 'y', 'n'];
+    // s = /model 选择器里的「仅本次会话生效」，不会改掉全局默认
+    const allowed = ['Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BSpace', 'Space', 'C-c', 'C-d', 'y', 'n', 's'];
     if (!allowed.includes(key)) throw new Error(`不支持的按键: ${key}`);
     try {
       execFileSync('tmux', ['send-keys', '-t', this.tmuxTarget, key], { stdio: 'ignore' });

@@ -417,6 +417,7 @@ async function selectSession(id) {
   const data = await api(`/api/sessions/${id}`);
   state.events = data.events || [];
   state.review = null;
+  state.currentKind = (data.session && data.session.kind) || null;
   state.currentSource = (data.session && data.session.source) || null;
   state.currentSessionId = (data.session && data.session.cliSessionId) || null;
   state.currentCwd = (data.session && data.session.cwd) || null;
@@ -456,18 +457,64 @@ async function answerPerm(requestId, behavior) {
   });
 }
 
+async function postMessage(text) {
+  return api(`/api/sessions/${state.activeId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+}
+
+/** 斜杠命令：原生 TUI 会自己处理；结构化模式只能挑几条做等价操作 */
+async function handleSlash(text) {
+  if (state.currentKind === 'tui' || state.currentKind === 'mirror') {
+    try {
+      await postMessage(text);
+    } catch (err) {
+      alert(err.message);
+    }
+    return;
+  }
+  const parts = text.slice(1).split(/\s+/);
+  const cmd = parts[0];
+  const arg = parts.slice(1).join(' ');
+
+  if (cmd === 'model') {
+    if (!arg) {
+      alert('用法：/model <模型名>，例如 /model claude-haiku-4-5');
+      return;
+    }
+    if (!confirm(`当前是结构化模式，无法就地切换模型。\n要用「${arg}」重开本对话吗？（保留上下文）`)) return;
+    await startLocal({
+      name: `m-${Date.now().toString(36).slice(-5)}`,
+      resumeFrom: state.currentSessionId || undefined,
+      model: arg,
+      cwd: state.currentCwd || undefined,
+    });
+    return;
+  }
+
+  if (cmd === 'clear') {
+    if (!confirm('结构化模式无法就地清空上下文。要开一个全新的对话吗？')) return;
+    await startLocal({ cwd: state.currentCwd || undefined });
+    return;
+  }
+
+  alert(`「/${cmd}」只有原生 TUI 模式支持。\n当前是结构化模式，斜杠命令会被当成普通消息发给模型。`);
+}
+
 async function sendMessage() {
   const input = $('input');
   const text = input.value.trim();
   if (!text || !state.activeId) return;
   input.value = '';
   input.style.height = 'auto';
+  if (text.startsWith('/')) {
+    await handleSlash(text);
+    return;
+  }
   try {
-    await api(`/api/sessions/${state.activeId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
+    await postMessage(text);
   } catch (err) {
     alert(err.message);
   }
