@@ -8,6 +8,7 @@ const state = {
   events: [],
   es: null,
   boundName: null,
+  review: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -229,6 +230,36 @@ function render() {
   const blocks = buildBlocks(state.events);
   const frag = document.createDocumentFragment();
 
+  if (state.review) {
+    const bar = document.createElement('div');
+    bar.className = 'review-bar';
+    bar.innerHTML = `<span>审视模式（只读，未启动任何进程）· 会话 ${esc(
+      String(state.review.sessionId).slice(0, 8)
+    )} · ${state.review.total} 条记录</span>`;
+    const open = document.createElement('button');
+    open.className = 'primary small';
+    open.textContent = '打开此对话（新终端）';
+    open.onclick = () =>
+      startLocal({
+        name: `r-${String(state.review.sessionId).slice(0, 8)}-${Date.now().toString(36).slice(-4)}`,
+        resumeFrom: state.review.sessionId,
+        cwd: state.review.cwd || undefined,
+      });
+    const exit = document.createElement('button');
+    exit.className = 'ghost small';
+    exit.textContent = '退出审视';
+    exit.onclick = exitReview;
+    bar.appendChild(open);
+    bar.appendChild(exit);
+    frag.appendChild(bar);
+  }
+
+  // 审视模式下禁掉输入
+  const ro = !!state.review;
+  $('input').disabled = ro;
+  $('btn-send').disabled = ro;
+  $('btn-stop').disabled = ro;
+
   for (const b of blocks) {
     const div = document.createElement('div');
 
@@ -337,6 +368,11 @@ function renderSessionList() {
 }
 
 function updateHeader(active) {
+  if (state.review) {
+    $('chat-title').textContent = '审视历史会话（只读）';
+    $('chat-meta').textContent = `${String(state.review.sessionId).slice(0, 8)} · ${state.review.cwd || ''}`;
+    return;
+  }
   if (!active) {
     $('chat-title').textContent = '未选择会话';
     $('chat-meta').textContent = '';
@@ -380,8 +416,9 @@ async function selectSession(id) {
   state.activeId = id;
   const data = await api(`/api/sessions/${id}`);
   state.events = data.events || [];
-  const isMirror = data.session && data.session.kind === 'mirror';
-  $('key-row').hidden = !isMirror;
+  state.review = null;
+  const kind = data.session && data.session.kind;
+  $('key-row').hidden = !(kind === 'mirror' || kind === 'tui');
   render();
   openStream(id);
   await refreshSessions();
@@ -479,6 +516,28 @@ async function startLocal(options) {
   await bindManaged(data.name);
 }
 
+/** 审视：只读渲染一段历史，不起任何进程 */
+async function previewHistory(h) {
+  const q = `sessionId=${encodeURIComponent(h.sessionId)}&cwd=${encodeURIComponent(h.cwd || '')}`;
+  const data = await api(`/api/history/preview?${q}`);
+  if (state.es) {
+    state.es.close();
+    state.es = null;
+  }
+  state.activeId = null;
+  state.boundName = null;
+  state.review = { sessionId: h.sessionId, cwd: h.cwd, total: data.total || 0 };
+  state.events = data.events || [];
+  $('key-row').hidden = true;
+  render();
+}
+
+function exitReview() {
+  state.review = null;
+  state.events = [];
+  render();
+}
+
 async function stopLocal(name) {
   if (!confirm(`结束本地会话 ${name}？（会杀掉对应的 tc 进程）`)) return;
   await api(`/api/local-sessions/${encodeURIComponent(name)}`, { method: 'DELETE' });
@@ -551,13 +610,21 @@ async function loadLocal() {
     const when = String(h.timestamp || '').slice(0, 16).replace('T', ' ');
     d.innerHTML = `<div class="t"><b>${esc(String(h.sessionId).slice(0, 8))}</b><span>${esc(when)}</span></div>
       <div class="s">${h.source === 'managed' && h.name ? esc(h.name) + ' · ' : ''}${esc(h.cwd || '')}</div>`;
-    d.title = '点击恢复：会新起一个终端会话（tmux）并接入 Web';
-    d.onclick = () =>
+    d.title = '点击审视这段历史（只读，不起进程）';
+    d.onclick = () => previewHistory(h);
+    const open = document.createElement('button');
+    open.className = 'ghost small';
+    open.textContent = '打开（新终端）';
+    open.title = '新起一个 tmux 会话恢复这段对话并接入 Web';
+    open.onclick = (ev) => {
+      ev.stopPropagation();
       startLocal({
         name: `r-${String(h.sessionId).slice(0, 8)}-${Date.now().toString(36).slice(-4)}`,
         resumeFrom: h.sessionId,
         cwd: h.cwd || undefined,
       });
+    };
+    d.appendChild(open);
     hl.appendChild(d);
   }
   if (!history.length) {

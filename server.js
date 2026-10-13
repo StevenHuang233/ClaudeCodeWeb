@@ -162,6 +162,49 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 200, { items: Array.from(SESSIONS.values()).map((s) => s.toJSON()) });
   }
 
+  /* 审视历史会话：只读地把记录渲染出来，不起任何进程 */
+  if (pathname === '/api/history/preview' && method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId') || '';
+    if (!sessionId) return sendJSON(res, 400, { error: '缺少 sessionId' });
+    const cwd = url.searchParams.get('cwd') || config.defaultCwd;
+    const check = validateCwd(cwd);
+
+    let file = check.ok ? local.findTranscript(check.cwd, sessionId) : null;
+    if (!file) {
+      const m = local.listManaged().find((x) => x.sessionId === sessionId || x.name === sessionId);
+      if (m && m.logPath && fs.existsSync(m.logPath)) file = m.logPath;
+    }
+    if (!file || !fs.existsSync(file)) return sendJSON(res, 404, { error: '找不到该会话的记录文件' });
+
+    // 只读最后 4MB，避免大文件把内存吃满
+    const size = fs.statSync(file).size;
+    const MAX = 4 * 1024 * 1024;
+    let raw;
+    if (size > MAX) {
+      const fd = fs.openSync(file, 'r');
+      const buf = Buffer.alloc(MAX);
+      fs.readSync(fd, buf, 0, MAX, size - MAX);
+      fs.closeSync(fd);
+      raw = buf.toString('utf8');
+      raw = raw.slice(raw.indexOf('\n') + 1);
+    } else {
+      raw = fs.readFileSync(file, 'utf8');
+    }
+
+    const events = [];
+    let seq = 0;
+    for (const line of raw.split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        events.push(Object.assign({}, JSON.parse(t), { _seq: seq++, _ts: Date.now() }));
+      } catch (err) {
+        /* 跳过坏行 */
+      }
+    }
+    return sendJSON(res, 200, { file, sessionId, total: events.length, events: events.slice(-800) });
+  }
+
   /* ---------------- 本地已在跑的 tc：发现 / 启动 / 停止 ---------------- */
 
   if (pathname === '/api/local-sessions' && method === 'GET') {
@@ -247,19 +290,22 @@ async function handleApi(req, res, url) {
       if (!meta) return sendJSON(res, 404, { error: `找不到本地会话 ${body.source.name}` });
       if (!meta.alive) return sendJSON(res, 400, { error: `本地会话 ${body.source.name} 已退出` });
 
-      // 原生交互模式（--tui）没有事件流，只能按屏幕镜像接入
+      // 原生 TUI：终端是原生界面，Web 读 Claude Code 的会话记录，两边实时同步
       if (meta.mode === 'tui') {
-        if (!meta.tmuxTarget) return sendJSON(res, 400, { error: '该会话不在 tmux 里，无法镜像' });
-        const m = new LocalSession({
-          kind: 'mirror',
-          tmuxTarget: meta.tmuxTarget,
+        const transcript = meta.transcriptPath || local.findTranscript(meta.cwd, meta.sessionId);
+        if (!transcript) return sendJSON(res, 400, { error: '还没找到该会话的记录文件，稍等几秒再试' });
+        const t = new LocalSession({
+          kind: 'tui',
+          name: meta.name,
+          transcriptPath: transcript,
+          tmuxTarget: meta.tmuxTarget || `${meta.name}:0.0`,
           pid: meta.pid,
           cwd: meta.cwd,
-          title: `${meta.name}（原生 TUI）`,
+          model: meta.model,
         });
-        attachSession(m);
-        m.start();
-        return sendJSON(res, 201, { session: m.toJSON() });
+        attachSession(t);
+        t.start();
+        return sendJSON(res, 201, { session: t.toJSON() });
       }
 
       const s = new LocalSession({

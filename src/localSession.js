@@ -17,6 +17,7 @@ const { EventEmitter } = require('events');
 const { execFileSync } = require('child_process');
 const { randomUUID } = require('crypto');
 const { config } = require('./config');
+const { findTranscript } = require('./local');
 
 const MAX_EVENTS = 4000;
 const TAIL_INTERVAL = 300;
@@ -38,7 +39,14 @@ class LocalSession extends EventEmitter {
     this._timer = null;
     this._offset = 0;
 
-    if (this.kind === 'managed') {
+    if (this.kind === 'tui') {
+      // 终端是原生 TUI；Web 靠 tail Claude Code 的会话记录文件拿到结构化内容
+      this.name = opts.name;
+      this.transcriptPath = opts.transcriptPath || null;
+      this.tmuxTarget = opts.tmuxTarget || (opts.name ? `${opts.name}:0.0` : null);
+      this.pid = opts.pid || null;
+      this.title = this.title || this.name;
+    } else if (this.kind === 'managed') {
       this.name = opts.name;
       this.logPath = opts.logPath;
       this.fifoPath = opts.fifoPath;
@@ -60,6 +68,18 @@ class LocalSession extends EventEmitter {
       fs.mkdirSync(config.runDir, { recursive: true });
     } catch (err) {
       /* ignore */
+    }
+
+    if (this.kind === 'tui') {
+      this.status = 'running';
+      this._push({
+        type: 'ccweb',
+        subtype: 'attached',
+        message: `已接入 ${this.name}（终端是原生 TUI，Web 读它的会话记录，实时同步）`,
+      });
+      this._timer = setInterval(() => this._tail(), TAIL_INTERVAL);
+      this._tail();
+      return this;
     }
 
     if (this.kind === 'mirror') {
@@ -95,7 +115,22 @@ class LocalSession extends EventEmitter {
   }
 
   _tail() {
-    const file = this.kind === 'managed' ? this.logPath : this.mirrorPath;
+    let file;
+    if (this.kind === 'managed') file = this.logPath;
+    else if (this.kind === 'tui') file = this.transcriptPath;
+    else file = this.mirrorPath;
+
+    if (this.kind === 'tui') {
+      // 原生 TUI 随时可能新建/切换会话记录文件，每次轮询都重新定位最新的那个
+      const p = findTranscript(this.cwd, null);
+      if (p) {
+        if (p !== this.transcriptPath) {
+          this.transcriptPath = p;
+          this._offset = 0; // 换了文件就从头读
+        }
+        file = p;
+      }
+    }
     if (!file) return;
     let stat;
     try {
@@ -134,6 +169,12 @@ class LocalSession extends EventEmitter {
         evt = JSON.parse(line);
       } catch (err) {
         continue;
+      }
+      if (evt && evt.sessionId && !this.sessionId) this.sessionId = evt.sessionId;
+      if (this.kind === 'tui') {
+        // 记录文件里没有 result 事件，用 assistant 消息判断一轮结束
+        if (evt && evt.type === 'assistant') this.status = 'idle';
+        if (evt && evt.type === 'user') this.status = 'running';
       }
       if (evt && evt.type === 'system' && evt.subtype === 'init') {
         this.model = evt.model || this.model;
@@ -212,7 +253,7 @@ class LocalSession extends EventEmitter {
 
   /** 镜像模式下从网页敲按键（白名单，避免把任意字符串当 tmux key 名执行） */
   sendKey(key) {
-    if (this.kind !== 'mirror') throw new Error('仅镜像会话支持按键');
+    if (this.kind !== 'mirror' && this.kind !== 'tui') throw new Error('仅镜像 / 原生 TUI 会话支持按键');
     const allowed = ['Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BSpace', 'Space', 'C-c', 'C-d', 'y', 'n'];
     if (!allowed.includes(key)) throw new Error(`不支持的按键: ${key}`);
     try {
@@ -224,7 +265,9 @@ class LocalSession extends EventEmitter {
   }
 
   respondControl() {
-    if (this.kind === 'mirror') throw new Error('镜像模式不支持权限审批（请在 tmux 里直接操作）');
+    if (this.kind === 'mirror' || this.kind === 'tui') {
+      throw new Error('该会话不支持网页端权限审批，请在终端里直接操作');
+    }
     throw new Error('本地绑定模式下暂不支持权限审批，请用 acceptEdits 等自动模式');
   }
 
@@ -265,9 +308,12 @@ class LocalSession extends EventEmitter {
       createdAt: this.createdAt,
       lastError: this.lastError,
       lastResult: this.lastResult || null,
-      source: this.kind === 'managed'
-        ? { name: this.name, pid: this.pid }
-        : { tmuxTarget: this.tmuxTarget, pid: this.pid },
+      source:
+        this.kind === 'managed'
+          ? { name: this.name, pid: this.pid }
+          : this.kind === 'tui'
+          ? { name: this.name, tmuxTarget: this.tmuxTarget, mode: 'tui', pid: this.pid }
+          : { tmuxTarget: this.tmuxTarget, pid: this.pid },
     };
   }
 }

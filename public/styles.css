@@ -177,6 +177,20 @@ details.thinking > div { margin-top: 6px; color: var(--text-dim); white-space: p
 .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2, start) infinite; }
 @keyframes blink { to { visibility: hidden; } }
 
+.review-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--warn);
+  background: #221f14;
+}
+.review-bar button { padding: 3px 10px; font-size: 12px; }
+
 .key-row {
   border-top: 1px solid var(--border);
   padding: 8px 20px 0;

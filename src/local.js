@@ -61,6 +61,57 @@ function listManaged() {
   return items.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 }
 
+/** Claude Code 把每个会话实时写进 <config>/projects/<slug>/<sessionId>.jsonl */
+function projectDir(cwd) {
+  return path.join(config.claudeConfigDir, 'projects', String(cwd).replace(/[^a-zA-Z0-9]/g, '-'));
+}
+
+/** 找到某个会话的记录文件：优先按 sessionId 匹配，否则取最近修改的那个 */
+function findTranscript(cwd, sessionId) {
+  const dir = projectDir(cwd);
+  let files = [];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+  } catch (err) {
+    return null;
+  }
+  if (!files.length) return null;
+
+  if (sessionId) {
+    const id = String(sessionId);
+    for (const f of files) {
+      if (f.startsWith(id.slice(0, 8)) || f.replace(/\.jsonl$/, '') === id) return path.join(dir, f);
+    }
+    for (const f of files) {
+      try {
+        const fd = fs.openSync(path.join(dir, f), 'r');
+        const buf = Buffer.alloc(8192);
+        const n = fs.readSync(fd, buf, 0, buf.length, 0);
+        fs.closeSync(fd);
+        const o = JSON.parse(buf.toString('utf8', 0, n).split('\n')[0]);
+        if (o && (o.sessionId === id || o.session_id === id)) return path.join(dir, f);
+      } catch (err) {
+        /* 继续找 */
+      }
+    }
+  }
+
+  let best = null;
+  let bt = 0;
+  for (const f of files) {
+    try {
+      const st = fs.statSync(path.join(dir, f));
+      if (st.mtimeMs > bt) {
+        bt = st.mtimeMs;
+        best = f;
+      }
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  return best ? path.join(dir, best) : null;
+}
+
 /** 从事件日志里找 Claude 的 session_id，历史记录靠它 --resume 恢复 */
 function sessionIdFromLog(logPath) {
   if (!logPath) return null;
@@ -323,5 +374,7 @@ module.exports = {
   tmuxHasSession,
   tmuxPanes,
   sessionIdFromLog,
+  findTranscript,
+  projectDir,
   isAlive,
 };

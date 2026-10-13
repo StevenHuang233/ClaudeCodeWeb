@@ -83,6 +83,8 @@ const config = {
   maxSessions: Number(process.env.CCWEB_MAX_SESSIONS || 32),
   readOnly: process.env.CCWEB_READ_ONLY === '1',
   tclaudeHome: TCLAUDE_HOME,
+  // Claude Code 自己的会话记录目录，TUI 模式下 Web 靠 tail 这里的文件拿到结构化内容
+  claudeConfigDir: process.env.CLAUDE_CONFIG_DIR || TCLAUDE_HOME,
   // 本地 tc 会话的落盘目录：*.jsonl（事件流）、*.fifo（输入）、*.meta.json（元信息）
   runDir: process.env.CCWEB_RUN_DIR || path.join(HOME, '.cache', 'ccweb'),
   cheapestModel: CHEAPEST_MODEL,

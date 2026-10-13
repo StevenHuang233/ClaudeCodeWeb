@@ -106,15 +106,62 @@ console.log(dim(`[tc-run] ${name} · ${cwd} · ${model} · pid=${process.pid}${r
 console.log(dim(`[tc-run] 事件流: ${logPath}`));
 console.log(dim('[tc-run] 直接打字发消息，Ctrl+C 结束\n'));
 
-// --tui：跑原生交互界面（就是平时直接敲 tclaude 看到的那个页面）。
-// 代价是拿不到结构化事件流，Web 只能做屏幕镜像。
-const tuiMode = argv.includes('--tui');
+// 默认跑原生交互界面（就是平时直接敲 tclaude 看到的那个页面）。
+// Web 端改读 Claude Code 自己的会话记录文件，所以两边依然实时同步。
+// 想回到「终端也是我们渲染的简化界面 + 完整事件流」，加 --structured。
+const tuiMode = !argv.includes('--structured');
 if (tuiMode) {
   meta.mode = 'tui';
   saveMeta();
-  console.log(dim(`[tc-run] 原生交互模式 · ${name} · ${cwd}`));
-  console.log(dim('[tc-run] Web 端请用「镜像」方式接入这个会话\n'));
-  const c = spawn(cli, resumeFrom ? ['--resume', resumeFrom] : [], { cwd, stdio: 'inherit' });
+  if (process.stdout.isTTY) {
+    console.log(dim(`[tc-run] ${name} · ${cwd} · 原生交互界面`));
+    console.log(dim('[tc-run] Web 端读会话记录，与这里实时同步\n'));
+  }
+  const tuiArgs = [];
+  if (model) tuiArgs.push('--model', model);
+  if (perm) tuiArgs.push('--permission-mode', perm);
+  if (resumeFrom) tuiArgs.push('--resume', resumeFrom);
+  const c = spawn(cli, tuiArgs, { cwd, stdio: 'inherit' });
+
+  // 找到 Claude Code 正在写的会话记录文件，Web 靠它渲染
+  const projDir = path.join(
+    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.tclaude'),
+    'projects',
+    cwd.replace(/[^a-zA-Z0-9]/g, '-')
+  );
+  const startTs = Date.now();
+  let tries = 0;
+  const timer = setInterval(() => {
+    if (meta.transcriptPath || ++tries > 60) {
+      clearInterval(timer);
+      return;
+    }
+    let files = [];
+    try {
+      files = fs.readdirSync(projDir).filter((f) => f.endsWith('.jsonl'));
+    } catch (err) {
+      return;
+    }
+    let best = null;
+    let bt = startTs - 1000;
+    for (const f of files) {
+      try {
+        const st = fs.statSync(path.join(projDir, f));
+        if (st.mtimeMs > bt) {
+          bt = st.mtimeMs;
+          best = f;
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    }
+    if (best) {
+      meta.transcriptPath = path.join(projDir, best);
+      meta.sessionId = meta.sessionId || best.replace(/\.jsonl$/, '');
+      saveMeta();
+      clearInterval(timer);
+    }
+  }, 1000);
   c.on('exit', (code) => {
     meta.exitedAt = Date.now();
     saveMeta();
