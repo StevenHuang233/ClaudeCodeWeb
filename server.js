@@ -385,11 +385,12 @@ function openSSE(req, res, session) {
 /* --------------------------------- 启动 --------------------------------- */
 
 const server = http.createServer((req, res) => {
-  if (!authorized(req)) {
-    return sendJSON(res, 401, { error: '未授权：请提供 CCWEB_TOKEN' });
-  }
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  // 静态资源不含秘密，不设防；令牌只保护 /api/*（否则 ?token= 打开后 CSS/JS 会被 401）
   if (url.pathname.startsWith('/api/')) {
+    if (!authorized(req)) {
+      return sendJSON(res, 401, { error: '未授权：请提供 CCWEB_TOKEN' });
+    }
     handleApi(req, res, url).catch((err) => {
       sendJSON(res, 500, { error: String(err && err.message ? err.message : err) });
     });
