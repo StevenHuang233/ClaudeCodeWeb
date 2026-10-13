@@ -29,6 +29,7 @@ const model = arg('model') || 'claude-haiku-4-5';
 const perm = arg('perm') || 'acceptEdits';
 const cli = arg('cli') || 'tclaude';
 const resumeFrom = arg('resume') || '';
+const fork = argv.includes('--fork'); // 配合 --resume：分叉出新的 session id，原记录不动
 const runDir = process.env.CCWEB_RUN_DIR || path.join(os.homedir(), '.cache', 'ccweb');
 
 /**
@@ -120,7 +121,10 @@ if (tuiMode) {
   const tuiArgs = [];
   if (model) tuiArgs.push('--model', model);
   if (perm) tuiArgs.push('--permission-mode', perm);
-  if (resumeFrom) tuiArgs.push('--resume', resumeFrom);
+  if (resumeFrom) {
+    tuiArgs.push('--resume', resumeFrom);
+    if (fork) tuiArgs.push('--fork-session');
+  }
   const c = spawn(cli, tuiArgs, { cwd, stdio: 'inherit' });
 
   // 交互式 tclaude 默认会续接该目录下最近一次会话（CLI 没有 --new），
@@ -226,7 +230,10 @@ const cliArgs = [
   '--model', model,
   '--permission-mode', perm,
 ];
-if (resumeFrom) cliArgs.push('--resume', resumeFrom);
+if (resumeFrom) {
+  cliArgs.push('--resume', resumeFrom);
+  if (fork) cliArgs.push('--fork-session');
+}
 
 const child = spawn(cli, cliArgs, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
 

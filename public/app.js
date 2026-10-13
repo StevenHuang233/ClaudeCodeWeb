@@ -766,6 +766,7 @@ async function startLocal(options) {
       model: opts.model || $('sel-model').value,
       permissionMode: $('sel-perm').value,
       resumeFrom: opts.resumeFrom || null,
+      fork: !!opts.fork,
     }),
   });
   await loadLocal();
@@ -1049,6 +1050,29 @@ async function purgeLocal(name) {
   await loadLocal();
 }
 
+/** 重命名会话显示名 */
+async function renameHistory(h) {
+  const cur = h.title || '';
+  const v = prompt('给这个会话起个名字（留空则恢复成 session id）：', cur);
+  if (v === null) return;
+  await api(`/api/history/${encodeURIComponent(h.sessionId)}/title`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: v }),
+  });
+  await loadLocal();
+}
+
+/** 分叉：从这条记录开一个新会话，用新的 session id，原记录保持不变 */
+async function forkHistory(h) {
+  await startLocal({
+    name: `f-${String(h.sessionId).slice(0, 8)}-${Date.now().toString(36).slice(-5)}`,
+    resumeFrom: h.sessionId,
+    fork: true,
+    cwd: h.cwd || undefined,
+  });
+}
+
 /** 历史记录 <-> 归档（只改标记，不动文件） */
 async function archiveHistory(h, on) {
   const flag = on !== false;
@@ -1089,7 +1113,7 @@ async function loadLocal() {
     const d = document.createElement('div');
     const bound = state.boundName === m.name;
     d.className = 'item' + (bound ? ' active' : '');
-    d.innerHTML = `<div class="t"><b>${esc(m.name)}</b><span>${bound ? 'Web 已接入' : '运行中'}</span></div>
+    d.innerHTML = `<div class="t"><b>${esc(m.title || m.name)}</b><span>${bound ? 'Web 已接入' : '运行中'}</span></div>
       <div class="s">${esc(m.model || '')} · ${esc(m.cwd || '')}${m.mode === 'tui' ? ' · 原生 TUI（Web 镜像）' : ''}</div>
       <div class="s cmd">${esc(m.attachCmd || '（无 tmux）')}</div>`;
     d.title = m.mode === 'tui'
@@ -1105,6 +1129,14 @@ async function loadLocal() {
       stopLocal(m.name);
     };
     d.appendChild(btn);
+    const rn = document.createElement('button');
+    rn.className = 'ghost small';
+    rn.textContent = '重命名';
+    rn.onclick = (ev) => {
+      ev.stopPropagation();
+      renameHistory({ sessionId: m.sessionId || m.name, title: m.title || '' });
+    };
+    d.appendChild(rn);
     const del = document.createElement('button');
     del.className = 'ghost small danger';
     del.textContent = '删除';
@@ -1162,6 +1194,23 @@ async function loadLocal() {
       });
     };
     d.appendChild(open);
+    const fk = document.createElement('button');
+    fk.className = 'ghost small';
+    fk.textContent = '分支';
+    fk.title = '从这条记录分叉出新会话（新 session id，原记录不动）';
+    fk.onclick = (ev) => {
+      ev.stopPropagation();
+      forkHistory(h);
+    };
+    d.appendChild(fk);
+    const rn = document.createElement('button');
+    rn.className = 'ghost small';
+    rn.textContent = '重命名';
+    rn.onclick = (ev) => {
+      ev.stopPropagation();
+      renameHistory(h);
+    };
+    d.appendChild(rn);
     const arc = document.createElement('button');
     arc.className = 'ghost small';
     arc.textContent = '归档';
@@ -1187,7 +1236,7 @@ async function loadLocal() {
     const d = document.createElement('div');
     d.className = 'item';
     const when = String(h.timestamp || '').slice(0, 16).replace('T', ' ');
-    d.innerHTML = `<div class="t"><b>${esc(String(h.sessionId).slice(0, 8))}</b><span>${esc(when)}</span></div>
+    d.innerHTML = `<div class="t"><b>${esc(h.title || String(h.sessionId).slice(0, 8))}</b><span>${esc(when)}</span></div>
       <div class="s">${h.source === 'managed' && h.name ? esc(h.name) + ' · ' : ''}${esc(h.cwd || '')}</div>`;
     d.title = '点击审视';
     d.onclick = () => previewHistory(h);
@@ -1203,6 +1252,23 @@ async function loadLocal() {
       });
     };
     d.appendChild(open);
+    const fk = document.createElement('button');
+    fk.className = 'ghost small';
+    fk.textContent = '分支';
+    fk.title = '从这条记录分叉出新会话（新 session id，原记录不动）';
+    fk.onclick = (ev) => {
+      ev.stopPropagation();
+      forkHistory(h);
+    };
+    d.appendChild(fk);
+    const rn = document.createElement('button');
+    rn.className = 'ghost small';
+    rn.textContent = '重命名';
+    rn.onclick = (ev) => {
+      ev.stopPropagation();
+      renameHistory(h);
+    };
+    d.appendChild(rn);
     const back = document.createElement('button');
     back.className = 'ghost small';
     back.textContent = '移回历史';

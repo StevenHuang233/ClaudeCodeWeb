@@ -301,6 +301,7 @@ async function handleApi(req, res, url) {
 
     // 归档标记要对所有来源生效（CLI 历史条目本身不带这个字段）
     const archivedSet = local.readArchived();
+    const titles = local.readTitles();
     const activeIds = new Set(active.map((m) => m.sessionId).filter(Boolean));
     const seen = new Set();
     const history = [];
@@ -308,8 +309,10 @@ async function handleApi(req, res, url) {
       if (!h.sessionId || activeIds.has(h.sessionId) || seen.has(h.sessionId)) continue;
       seen.add(h.sessionId);
       h.archived = archivedSet.has(h.sessionId);
+      h.title = titles[h.sessionId] || null;
       history.push(h);
     }
+    for (const a of active) a.title = titles[a.sessionId] || null;
     history.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
     const historyList = history.filter((h) => !h.archived).slice(0, 40);
     const archiveList = history.filter((h) => h.archived).slice(0, 200);
@@ -341,6 +344,7 @@ async function handleApi(req, res, url) {
         model: String(body.model || config.defaultModel),
         permissionMode: String(body.permissionMode || config.permissionMode),
         resumeFrom: body.resumeFrom || null,
+        fork: !!body.fork,
         structured: !!body.structured,
       });
       return sendJSON(res, 201, Object.assign({ resumeFrom: body.resumeFrom || null }, started));
@@ -360,6 +364,16 @@ async function handleApi(req, res, url) {
   if (delHist && method === 'DELETE') {
     const cwd = url.searchParams.get('cwd') || config.defaultCwd;
     return sendJSON(res, 200, local.deleteHistory(delHist[1], cwd));
+  }
+
+  // 重命名（会话显示名，按 sessionId 存）
+  const titleHist = pathname.match(/^\/api\/history\/([\w.:-]+)\/title$/);
+  if (titleHist && method === 'POST') {
+    const body = await readBody(req);
+    return sendJSON(res, 200, {
+      sessionId: titleHist[1],
+      title: local.setTitle(titleHist[1], body.title || ''),
+    });
   }
 
   // 历史记录 -> 归档（或取消归档）

@@ -216,6 +216,33 @@ function setArchived(sessionId, on) {
   return !!on;
 }
 
+/* ------------------------ 会话显示名（重命名） ------------------------ */
+
+function titlesPath() {
+  return path.join(ensureRunDir(), 'titles.json');
+}
+
+function readTitles() {
+  try {
+    return JSON.parse(fs.readFileSync(titlesPath(), 'utf8')).titles || {};
+  } catch (err) {
+    return {};
+  }
+}
+
+function setTitle(sessionId, title) {
+  const t = readTitles();
+  const v = String(title || '').trim();
+  if (v) t[String(sessionId)] = v;
+  else delete t[String(sessionId)];
+  try {
+    fs.writeFileSync(titlesPath(), JSON.stringify({ titles: t }, null, 2));
+  } catch (err) {
+    /* ignore */
+  }
+  return v || null;
+}
+
 /** 从事件日志里找 Claude 的 session_id，历史记录靠它 --resume 恢复 */
 function sessionIdFromLog(logPath) {
   if (!logPath) return null;
@@ -404,6 +431,7 @@ function startManaged(opts) {
     '--cli', config.cli,
   ];
   if (opts.resumeFrom) args.push('--resume', String(opts.resumeFrom));
+  if (opts.resumeFrom && opts.fork) args.push('--fork'); // runner 自己会翻译成 CLI 的 --fork-session
   if (opts.structured) args.push('--structured');
 
   let launchedBy = 'tmux';
@@ -488,5 +516,7 @@ module.exports = {
   deleteHistory,
   setArchived,
   readArchived,
+  readTitles,
+  setTitle,
   isAlive,
 };
