@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ClaudeCodeWeb</title>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">ClaudeCode<span>Web</span></div>
+
+    <button id="btn-new" class="primary">+ 新建会话</button>
+
+    <label class="field">
+      <span>模型</span>
+      <select id="sel-model"></select>
+    </label>
+
+    <label class="field">
+      <span>工作目录</span>
+      <input id="inp-cwd" type="text" spellcheck="false" />
+    </label>
+
+    <label class="field">
+      <span>权限模式</span>
+      <select id="sel-perm"></select>
+    </label>
+
+    <p id="hint" class="hint"></p>
+
+    <div class="sec-title">当前会话</div>
+    <div id="session-list" class="list"></div>
+
+    <div class="sec-title">历史会话（可续聊）</div>
+    <div id="history-list" class="list"></div>
+  </aside>
+
+  <main class="main">
+    <header class="chat-header">
+      <div class="chat-title" id="chat-title">未选择会话</div>
+      <div class="chat-meta" id="chat-meta"></div>
+    </header>
+
+    <div id="messages" class="messages"></div>
+
+    <form id="composer" class="composer">
+      <textarea id="input" rows="2" placeholder="Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
+      <div class="composer-actions">
+        <button type="button" id="btn-stop" class="ghost">停止</button>
+        <button type="submit" id="btn-send" class="primary">发送</button>
+      </div>
+    </form>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

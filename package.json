@@ -1,0 +1,14 @@
+{
+  "name": "claudecodeweb",
+  "version": "0.1.0",
+  "private": true,
+  "description": "把 tclaude / claude code CLI 接到本地浏览器里用，不用一直盯着终端",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
