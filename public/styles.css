@@ -232,7 +232,20 @@ details.fold > .list { margin-top: 6px; }
   max-height: 220px;
 }
 .composer textarea:focus { border-color: var(--accent); }
-.composer-actions { display: flex; gap: 8px; }
+.composer-actions { display: flex; gap: 8px; align-items: center; }
+
+select.chat-model {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+  max-width: 220px;
+}
+select.chat-model:focus { border-color: var(--accent); }
+select.chat-model:disabled { opacity: .5; }
 
 .empty { color: var(--text-dim); text-align: center; margin: auto; }
 

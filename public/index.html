@@ -15,7 +15,7 @@
     <button id="btn-local" class="ghost">+ 启动本地 tc（tmux，可共享）</button>
 
     <label class="field">
-      <span>模型</span>
+      <span>模型（新建对话的默认）</span>
       <select id="sel-model"></select>
     </label>
 
@@ -73,6 +73,7 @@
     <form id="composer" class="composer">
       <textarea id="input" rows="2" placeholder="Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
       <div class="composer-actions">
+        <select id="chat-model" class="chat-model" title="切换当前对话的模型：会转成 /model <名字> 敲进终端"></select>
         <button type="button" id="btn-stop" class="ghost">停止</button>
         <button type="submit" id="btn-send" class="primary">发送</button>
       </div>

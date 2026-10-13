@@ -259,6 +259,7 @@ function render() {
   $('input').disabled = ro;
   $('btn-send').disabled = ro;
   $('btn-stop').disabled = ro;
+  $('chat-model').disabled = ro || !state.activeId;
 
   for (const b of blocks) {
     const div = document.createElement('div');
@@ -421,10 +422,7 @@ async function selectSession(id) {
   state.currentSource = (data.session && data.session.source) || null;
   state.currentSessionId = (data.session && data.session.cliSessionId) || null;
   state.currentCwd = (data.session && data.session.cwd) || null;
-  // 下拉框回显当前会话在用的模型
-  const sel = $('sel-model');
-  const m = data.session && data.session.model;
-  if (m && Array.from(sel.options).some((o) => o.value === m)) sel.value = m;
+  setModelSelects(data.session && data.session.model);
   const kind = data.session && data.session.kind;
   $('key-row').hidden = !(kind === 'mirror' || kind === 'tui');
   render();
@@ -552,10 +550,20 @@ function tsName() {
   return `tc-${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
+/** 两个模型下拉框保持同步 */
+function setModelSelects(value) {
+  if (!value) return;
+  for (const id of ['sel-model', 'chat-model']) {
+    const el = $(id);
+    if (el && Array.from(el.options).some((o) => o.value === value)) el.value = value;
+  }
+}
+
 /** 切换当前会话的模型；不支持就地切换的（结构化模式）改为用新模型重开 */
-async function changeModel() {
-  const model = $('sel-model').value;
-  if (!state.activeId || state.review) return; // 没有活动会话时，下拉框只影响新建
+async function changeModel(model) {
+  if (!model) return;
+  setModelSelects(model);
+  if (!state.activeId || state.review) return; // 没有活动会话时，只作为新建对话的默认值
   try {
     await api(`/api/sessions/${state.activeId}/model`, {
       method: 'POST',
@@ -863,6 +871,7 @@ async function boot() {
   state.cfg = await api('/api/config');
   const models = state.cfg.models && state.cfg.models.length ? state.cfg.models : [state.cfg.defaultModel];
   fillSelect($('sel-model'), models, state.cfg.defaultModel);
+  fillSelect($('chat-model'), models, state.cfg.defaultModel);
   fillSelect($('sel-perm'), state.cfg.permissionModes, state.cfg.permissionMode);
   $('inp-cwd').value = state.cfg.defaultCwd;
 
@@ -908,7 +917,8 @@ async function boot() {
     e.target.style.height = Math.min(e.target.scrollHeight, 220) + 'px';
   });
   $('inp-cwd').addEventListener('change', loadLocal);
-  $('sel-model').addEventListener('change', () => changeModel().catch((err) => alert(err.message)));
+  $('sel-model').addEventListener('change', () => changeModel($('sel-model').value).catch((err) => alert(err.message)));
+  $('chat-model').addEventListener('change', () => changeModel($('chat-model').value).catch((err) => alert(err.message)));
 
   state.events = [];
   render();
