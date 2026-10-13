@@ -15,7 +15,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync, execFileSync } = require('child_process');
 
 const argv = process.argv.slice(2);
 function arg(key, dflt) {
@@ -30,6 +30,37 @@ const perm = arg('perm') || 'acceptEdits';
 const cli = arg('cli') || 'tclaude';
 const resumeFrom = arg('resume') || '';
 const runDir = process.env.CCWEB_RUN_DIR || path.join(os.homedir(), '.cache', 'ccweb');
+
+/**
+ * 不在 tmux 里（比如直接在 CodeBuddy / iTerm 的终端里跑）时，自动把自己塞进一个
+ * 同名 tmux 会话并 attach 上去。这样终端和 Web 看到的是同一个进程，
+ * 也解决了「没有多路复用器就无法接管已有进程」的问题。
+ */
+if (!argv.includes('--no-tmux') && !process.env.TMUX) {
+  let hasTmux = false;
+  try {
+    execFileSync('tmux', ['-V'], { stdio: 'ignore' });
+    hasTmux = true;
+  } catch (err) {
+    hasTmux = false;
+  }
+  if (hasTmux) {
+    const self = [process.execPath, __filename].concat(argv, ['--no-tmux']);
+    const inner = self.map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(' ');
+    try {
+      execFileSync('tmux', ['new-session', '-d', '-s', name, '-c', cwd, inner], { stdio: 'ignore' });
+    } catch (err) {
+      // 同名会话已存在就直接复用
+    }
+    console.log(`[tc-run] 已在 tmux 会话「${name}」中启动，正在接入…（Ctrl+B 然后按 D 可脱离，会话继续在后台跑）`);
+    try {
+      spawnSync('tmux', ['attach', '-t', name], { stdio: 'inherit' });
+    } catch (err) {
+      console.log(`[tc-run] 当前环境无法直接接入，请手动执行： tmux attach -t ${name}`);
+    }
+    process.exit(0);
+  }
+}
 
 fs.mkdirSync(runDir, { recursive: true });
 const logPath = path.join(runDir, `${name}.jsonl`);

@@ -516,6 +516,21 @@ async function loadLocal() {
       stopLocal(m.name);
     };
     d.appendChild(btn);
+    if (m.attachCmd) {
+      const cp = document.createElement('button');
+      cp.className = 'ghost small';
+      cp.textContent = '复制终端命令';
+      cp.title = `复制「${m.attachCmd}」，在 CodeBuddy 的终端里粘贴执行即可看到同一个对话`;
+      cp.onclick = (ev) => {
+        ev.stopPropagation();
+        navigator.clipboard.writeText(m.attachCmd).then(
+          () => (cp.textContent = '已复制 ✓'),
+          () => alert('复制失败，请手动选中：' + m.attachCmd)
+        );
+        setTimeout(() => (cp.textContent = '复制终端命令'), 1500);
+      };
+      d.appendChild(cp);
+    }
     el.appendChild(d);
   }
   if (!active.length) {

@@ -170,9 +170,13 @@ class LocalSession extends EventEmitter {
         throw new Error(`写入 FIFO 失败（会话还活着吗）: ${err.message}`);
       }
       this.status = 'running';
+      // CLI 只会把「它自己输出的事件」写进日志，我们写进 stdin 的用户消息不会回显，
+      // 所以这里自己补一条 user 事件，Web 上才看得到输入
+      this._push({ type: 'user', message: { role: 'user', content: text } });
       return true;
     }
     // mirror：把文本敲进 tmux 窗格
+    this._push({ type: 'user', message: { role: 'user', content: text } });
     const lines = String(text).split('\n');
     try {
       for (let i = 0; i < lines.length; i++) {
