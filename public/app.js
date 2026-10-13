@@ -438,20 +438,37 @@ function render() {
 async function refreshSessions() {
   const data = await api('/api/sessions');
   state.sessions = data.items || [];
-  renderSessionList();
   const active = state.sessions.find((s) => s.id === state.activeId);
   updateHeader(active);
 }
 
-function renderSessionList() {
-  const el = $('session-list');
-  el.replaceChildren();
-  for (const s of state.sessions) {
+/**
+ * 已接入但不在本地发现列表里的会话（镜像、独立进程），
+ * 补进「当前对话」，这样不用单独一个「已接入」分区。
+ */
+function appendBoundSessions(el, shownKeys) {
+  for (const s of state.sessions || []) {
+    const src = s.source || {};
+    const key = src.name || src.tmuxTarget || s.id;
+    if (shownKeys.has(key)) continue;
+    shownKeys.add(key);
+
     const d = document.createElement('div');
     d.className = 'item' + (s.id === state.activeId ? ' active' : '');
-    d.innerHTML = `<div class="t"><b>${esc(s.title || '会话')}</b><span>${esc(s.status)}</span></div>
-      <div class="s">${esc(s.model)} · ${esc(s.cwd)}</div>`;
+    const kindLabel = s.kind === 'mirror' ? '镜像' : s.kind === 'tui' ? '原生 TUI' : '独立进程';
+    d.innerHTML = `<div class="t"><b>${esc(s.title || '会话')}</b><span>${esc(kindLabel)}</span></div>
+      <div class="s">${esc(s.model || '')} · ${esc(s.cwd || '')}</div>`;
     d.onclick = () => selectSession(s.id);
+
+    const off = document.createElement('button');
+    off.className = 'ghost small';
+    off.textContent = '断开';
+    off.onclick = async (ev) => {
+      ev.stopPropagation();
+      await api(`/api/sessions/${s.id}`, { method: 'DELETE' });
+      await loadLocal();
+    };
+    d.appendChild(off);
     el.appendChild(d);
   }
 }
@@ -859,8 +876,9 @@ function buildConfigPanel() {
     for (const a of state.agents || []) {
       const it = document.createElement('div');
       it.className = 'item';
-      it.innerHTML = `<div class="t"><b>${esc(a.name)}</b><span>${esc(a.tools || '继承全部')}</span></div>
-        <div class="s">${esc(a.description || '（无描述）')}</div>`;
+      it.innerHTML = `<div class="t"><b>${esc(a.name)}</b><span>${esc(a.model || 'inherit')}</span></div>
+        <div class="s">${esc(a.description || '（无描述）')}</div>
+        <div class="s cmd">tools: ${esc(a.tools || '继承全部')}</div>`;
       const ed = document.createElement('button');
       ed.className = 'ghost small';
       ed.textContent = '编辑';
@@ -890,6 +908,13 @@ function buildConfigPanel() {
       <input id="ag-name" placeholder="名称（英文，如 ceph-helper）" />
       <input id="ag-desc" placeholder="description：什么时候该用它（主 agent 靠这个选人）" />
       <input id="ag-tools" placeholder="tools：Bash, Read, Glob, Grep（留空=继承全部）" />
+      <input id="ag-model" list="ag-model-list" placeholder="model：haiku / sonnet / opus / 完整 ID / inherit" />
+      <datalist id="ag-model-list">
+        <option value="inherit">跟随主会话的模型</option>
+        <option value="haiku">便宜快</option>
+        <option value="sonnet">均衡</option>
+        <option value="opus">最强最贵</option>
+      </datalist>
       <textarea id="ag-body" rows="8" placeholder="正文就是它的 system prompt"></textarea>
     `;
     const save = document.createElement('button');
@@ -906,6 +931,7 @@ function buildConfigPanel() {
             name,
             description: $('ag-desc').value.trim(),
             tools: $('ag-tools').value.trim(),
+            model: $('ag-model').value.trim(),
             body: $('ag-body').value,
           }),
         });
@@ -1020,6 +1046,7 @@ function fillAgentForm(a) {
   $('ag-name').value = a.name || '';
   $('ag-desc').value = a.description || '';
   $('ag-tools').value = a.tools || '';
+  $('ag-model').value = a.model || '';
   $('ag-body').value = a.body || '';
 }
 
@@ -1109,9 +1136,11 @@ async function loadLocal() {
   /* 当前对话：终端和 Web 一一对应 */
   const el = $('active-list');
   el.replaceChildren();
+  const shownKeys = new Set();
   for (const m of active) {
     const d = document.createElement('div');
     const bound = state.boundName === m.name;
+    shownKeys.add(m.name);
     d.className = 'item' + (bound ? ' active' : '');
     d.innerHTML = `<div class="t"><b>${esc(m.title || m.name)}</b><span>${bound ? 'Web 已接入' : '运行中'}</span></div>
       <div class="s">${esc(m.model || '')} · ${esc(m.cwd || '')}${m.mode === 'tui' ? ' · 原生 TUI（Web 镜像）' : ''}</div>
@@ -1163,12 +1192,13 @@ async function loadLocal() {
     }
     el.appendChild(d);
   }
-  if (!active.length) {
-    const p = document.createElement('div');
-    p.className = 'hint';
-    p.textContent = '暂无。点上方「新建对话」，或在终端跑 scripts/tc-run.js';
-    el.appendChild(p);
+  // 已接入但本地发现列表里没有的（镜像 / 独立进程）也并进当前对话
+  try {
+    state.sessions = (await api('/api/sessions')).items || [];
+  } catch (err) {
+    /* 忽略 */
   }
+  appendBoundSessions(el, shownKeys);
 
   /* 历史记录：点击恢复 = 新开一个终端会话来跑它 */
   const hl = $('history-list');

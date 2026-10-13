@@ -52,6 +52,8 @@ function listAgents() {
       name: meta.name || f.replace(/\.md$/, ''),
       description: meta.description || '',
       tools: meta.tools || '',
+      // 子 agent 用的模型：别名(haiku/sonnet/opus) / 完整模型 ID / inherit(跟随主会话)
+      model: meta.model || '',
       body,
     };
   });
@@ -63,6 +65,7 @@ function saveAgent(name, data) {
   const lines = ['---', `name: ${safe}`];
   if (data.description) lines.push(`description: ${data.description}`);
   if (data.tools) lines.push(`tools: ${data.tools}`);
+  if (data.model) lines.push(`model: ${data.model}`);
   lines.push('---', '');
   const content = lines.join('\n') + (data.body || '');
   fs.writeFileSync(path.join(agentsDir(), `${safe}.md`), content);
