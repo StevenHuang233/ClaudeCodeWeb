@@ -243,6 +243,22 @@ Web 输入框 → tmux send-keys 敲进 TUI → TUI 处理 → 写会话记录 �
 | 原生 TUI / 镜像 | **就地生效** —— 发 `/model <name>` 斜杠命令，终端里能看到 `Set model to ...` |
 | 结构化 | 不支持就地切换（CLI 的 stream-json 协议没有 `set_model` 指令），会提示**用新模型重开**：新起一个终端会话 `--resume`，上下文保留 |
 
+### 打断 / 排队 / 插队
+
+输入框右下角三个按钮：
+
+| 按钮 | 行为 |
+| --- | --- |
+| **发送** | 直接发。**正在生成时会自动排队**，等这轮跑完再处理（实测排队消息会被正常回答） |
+| **插队** | 先打断当前生成，再立刻发送输入框内容 |
+| **打断** | 只打断当前生成，排队里的消息保留 |
+
+实现上：
+
+- 原生 TUI / 镜像：发 `C-c`（实测会出现 `Interrupted · What should Claude do instead?`，正好可以接着下指令）
+- 结构化：发 `control_request {subtype:'interrupt'}`，协议支持 `cancel_queued` 字段；
+  `POST /api/sessions/:id/interrupt {"cancelQueued": true}` 可连排队消息一起取消（TUI 下会连按两次 C-c）
+
 ### 计划模式（plan mode）
 
 | 能力 | 实现 |

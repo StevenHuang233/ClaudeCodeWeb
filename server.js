@@ -517,8 +517,9 @@ async function handleApi(req, res, url) {
   }
 
   if (pathname.endsWith('/interrupt') && method === 'POST') {
+    const body = await readBody(req);
     try {
-      s.interrupt();
+      s.interrupt(!!body.cancelQueued);
     } catch (err) {
       return sendJSON(res, 400, { error: err.message });
     }

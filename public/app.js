@@ -327,6 +327,7 @@ function render() {
     if (el) el.disabled = v;
   };
   dis('chat-model', ro || !state.activeId);
+  dis('btn-jump', ro || !state.activeId);
   dis('chat-effort', ro || !state.activeId);
   ($('cmd-row') || { querySelectorAll: () => [] })
     .querySelectorAll('button')
@@ -612,6 +613,32 @@ async function handleSlash(text) {
   }
 
   alert(`「/${cmd}」只有原生 TUI 模式支持。\n当前是结构化模式，斜杠命令会被当成普通消息发给模型。`);
+}
+
+/**
+ * 插队：正在生成时先打断，再立刻把输入框内容发出去。
+ * 普通「发送」则是排队，等当前这轮跑完再处理。
+ */
+async function jumpIn() {
+  if (!state.activeId) return alert('先打开一个对话');
+  const text = $('input').value.trim();
+  if (!text) return;
+  const cur = (state.sessions || []).find((s) => s.id === state.activeId);
+  if (cur && cur.status === 'running') {
+    try {
+      await api(`/api/sessions/${state.activeId}/interrupt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cancelQueued: false }),
+      });
+      await new Promise((r) => setTimeout(r, 700)); // 等它把中断处理完
+    } catch (err) {
+      /* 打断失败也照样发 */
+    }
+  }
+  $('input').value = '';
+  $('input').style.height = 'auto';
+  await postMessage(text);
 }
 
 async function sendMessage() {
@@ -1397,6 +1424,7 @@ async function boot() {
     e.preventDefault();
     sendMessage();
   };
+  on('btn-jump', 'click', () => jumpIn().catch((err) => alert(err.message)));
   on('btn-stop', 'click', async () => {
     if (!state.activeId) return;
     try {

@@ -235,22 +235,35 @@ class LocalSession extends EventEmitter {
     return true;
   }
 
-  interrupt() {
+  /**
+   * 打断当前生成。
+   * cancel_queued=true 时连已排队的用户消息一起取消（stream-json 协议支持）；
+   * 原生 TUI 下 C-c 会打断并提示「接下来要做什么」，正好可以接着插队新指令。
+   */
+  interrupt(cancelQueued) {
     if (this.kind === 'managed') {
       try {
         fs.appendFileSync(
           this.fifoPath,
-          JSON.stringify({ type: 'control_request', request_id: `int-${randomUUID()}`, request: { subtype: 'interrupt' } }) + '\n'
+          JSON.stringify({
+            type: 'control_request',
+            request_id: `int-${randomUUID()}`,
+            request: { subtype: 'interrupt', cancel_queued: !!cancelQueued },
+          }) + '\n'
         );
       } catch (err) {
-        throw new Error(err.message);
+        throw new Error(`写入 FIFO 失败: ${err.message}`);
       }
       return true;
     }
     try {
       execFileSync('tmux', ['send-keys', '-t', this.tmuxTarget, 'C-c'], { stdio: 'ignore' });
+      if (cancelQueued) {
+        execFileSync('sleep', ['0.3']);
+        execFileSync('tmux', ['send-keys', '-t', this.tmuxTarget, 'C-c'], { stdio: 'ignore' });
+      }
     } catch (err) {
-      throw new Error(err.message);
+      throw new Error(`tmux send-keys 失败: ${err.message}`);
     }
     return true;
   }

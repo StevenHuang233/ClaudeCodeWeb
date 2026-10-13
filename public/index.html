@@ -83,8 +83,9 @@
           <option value="medium">effort: medium</option>
           <option value="high">effort: high</option>
         </select>
-        <button type="button" id="btn-stop" class="ghost">停止</button>
-        <button type="submit" id="btn-send" class="primary">发送</button>
+        <button type="button" id="btn-stop" class="ghost" title="打断当前生成（排队的话保留）">打断</button>
+        <button type="button" id="btn-jump" class="ghost" title="先打断当前生成，再发送输入框内容">插队</button>
+        <button type="submit" id="btn-send" class="primary" title="发送；正在生成时会排队，等这轮结束再处理">发送</button>
       </div>
     </form>
   </main>
