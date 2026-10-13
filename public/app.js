@@ -272,6 +272,13 @@ function render() {
     frag.appendChild(bar);
   }
 
+  if (state.configView) {
+    frag.appendChild(buildConfigPanel());
+    messagesEl.replaceChildren(frag);
+    wireConfigPanel();
+    return;
+  }
+
   // 审视模式下禁掉输入
   const ro = !!state.review;
   $('input').disabled = ro;
@@ -743,6 +750,238 @@ function exitReview() {
   render();
 }
 
+/* ---------------------- 子 agent / 权限 / 模型权限 ---------------------- */
+
+const PROBE_LABEL = {
+  ok: '可用',
+  blocked: '无权限，需申请',
+  rate_limited: '上游限流',
+  invalid: '模型名无效',
+  budget: '额度耗尽',
+  error: '出错',
+  unknown: '未知',
+};
+
+async function showConfig(view) {
+  state.configView = view;
+  try {
+    if (view === 'agents') state.agents = (await api('/api/agents')).items || [];
+    if (view === 'perms') {
+      const d = await api('/api/settings');
+      state.settings = (d && d.settings) || {};
+      state.settingsPath = (d && d.path) || '';
+    }
+    if (view === 'probe') await refreshProbe();
+  } catch (err) {
+    alert(err.message);
+    state.configView = null;
+  }
+  render();
+}
+
+async function refreshProbe() {
+  const d = await api('/api/models/probe');
+  state.probe = d;
+  render();
+  if (d && d.running) setTimeout(refreshProbe, 3000);
+}
+
+function buildConfigPanel() {
+  const wrap = document.createElement('div');
+  wrap.className = 'cfg-panel';
+  const view = state.configView;
+
+  const head = document.createElement('div');
+  head.className = 'cfg-head';
+  const title = { agents: '子 agent', perms: '权限设置', probe: '模型权限' }[view] || '配置';
+  head.innerHTML = `<b>${esc(title)}</b>`;
+  const back = document.createElement('button');
+  back.className = 'ghost small';
+  back.textContent = '返回对话';
+  back.onclick = () => {
+    state.configView = null;
+    render();
+  };
+  head.appendChild(back);
+  wrap.appendChild(head);
+
+  if (view === 'agents') {
+    const dir = document.createElement('div');
+    dir.className = 'hint';
+    dir.textContent = '目录：' + (state.agentsDir || '<config>/agents');
+    wrap.appendChild(dir);
+
+    for (const a of state.agents || []) {
+      const it = document.createElement('div');
+      it.className = 'item';
+      it.innerHTML = `<div class="t"><b>${esc(a.name)}</b><span>${esc(a.tools || '继承全部')}</span></div>
+        <div class="s">${esc(a.description || '（无描述）')}</div>`;
+      const ed = document.createElement('button');
+      ed.className = 'ghost small';
+      ed.textContent = '编辑';
+      ed.onclick = () => fillAgentForm(a);
+      it.appendChild(ed);
+      const del = document.createElement('button');
+      del.className = 'ghost small danger';
+      del.textContent = '删除';
+      del.onclick = async () => {
+        if (!confirm(`删除子 agent「${a.name}」？`)) return;
+        await api(`/api/agents/${encodeURIComponent(a.name)}`, { method: 'DELETE' });
+        await showConfig('agents');
+      };
+      it.appendChild(del);
+      wrap.appendChild(it);
+    }
+    if (!(state.agents || []).length) {
+      const p = document.createElement('div');
+      p.className = 'hint';
+      p.textContent = '还没有子 agent。下面新建一个——主 agent 会按 description 决定何时委派给它。';
+      wrap.appendChild(p);
+    }
+
+    const form = document.createElement('div');
+    form.className = 'cfg-form';
+    form.innerHTML = `
+      <input id="ag-name" placeholder="名称（英文，如 ceph-helper）" />
+      <input id="ag-desc" placeholder="description：什么时候该用它（主 agent 靠这个选人）" />
+      <input id="ag-tools" placeholder="tools：Bash, Read, Glob, Grep（留空=继承全部）" />
+      <textarea id="ag-body" rows="8" placeholder="正文就是它的 system prompt"></textarea>
+    `;
+    const save = document.createElement('button');
+    save.className = 'primary small';
+    save.textContent = '保存';
+    save.onclick = async () => {
+      const name = $('ag-name').value.trim();
+      if (!name) return alert('名称必填');
+      try {
+        await api('/api/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            description: $('ag-desc').value.trim(),
+            tools: $('ag-tools').value.trim(),
+            body: $('ag-body').value,
+          }),
+        });
+        await showConfig('agents');
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+    form.appendChild(save);
+    wrap.appendChild(form);
+    return wrap;
+  }
+
+  if (view === 'perms') {
+    const p = document.createElement('div');
+    p.className = 'hint';
+    p.textContent = `文件：${esc(state.settingsPath || '')}（改动对新会话生效；运行中的会话用左侧「权限模式」下拉框切换）`;
+    wrap.appendChild(p);
+
+    const s = state.settings || {};
+    const perms = s.permissions || {};
+    const form = document.createElement('div');
+    form.className = 'cfg-form';
+    form.innerHTML = `
+      <label>允许（allow），一行一条</label>
+      <textarea id="pm-allow" rows="6" placeholder="Bash(git status)&#10;Bash(ls:*)&#10;Read(*)">${esc((perms.allow || []).join('\n'))}</textarea>
+      <label>拒绝（deny），一行一条</label>
+      <textarea id="pm-deny" rows="4" placeholder="Bash(rm -rf /:*)">${esc((perms.deny || []).join('\n'))}</textarea>
+    `;
+    const save = document.createElement('button');
+    save.className = 'primary small';
+    save.textContent = '保存';
+    save.onclick = async () => {
+      const lines = (v) =>
+        String(v || '')
+          .split('\n')
+          .map((x) => x.trim())
+          .filter(Boolean);
+      try {
+        await api('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ permissions: { allow: lines($('pm-allow').value), deny: lines($('pm-deny').value) } }),
+        });
+        alert('已保存');
+        await showConfig('perms');
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+    form.appendChild(save);
+    wrap.appendChild(form);
+    return wrap;
+  }
+
+  // probe
+  const d = state.probe || {};
+  const bar = document.createElement('div');
+  bar.className = 'cfg-head';
+  const run = document.createElement('button');
+  run.className = 'primary small';
+  run.textContent = d.running ? '探测中…' : '重新探测（会花一点钱）';
+  run.disabled = !!d.running;
+  run.onclick = async () => {
+    try {
+      await api('/api/models/probe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cwd: $('inp-cwd').value.trim() || undefined, force: true }),
+      });
+    } catch (err) {
+      alert(err.message);
+    }
+    await refreshProbe();
+  };
+  bar.appendChild(run);
+  if (d.probedAt) {
+    const t = document.createElement('span');
+    t.className = 'hint';
+    t.textContent = '上次探测：' + new Date(d.probedAt).toLocaleString();
+    bar.appendChild(t);
+  }
+  wrap.appendChild(bar);
+
+  for (const r of (d.results || [])) {
+    const it = document.createElement('div');
+    it.className = 'item';
+    const st = r.status || 'unknown';
+    it.innerHTML = `<div class="t"><b>${esc(r.model)}</b><span>${esc(PROBE_LABEL[st] || st)}</span></div>
+      ${r.detail ? `<div class="s">${esc(r.detail)}</div>` : ''}
+      ${r.cost !== undefined ? `<div class="s">单次约 $${Number(r.cost).toFixed(4)}</div>` : ''}`;
+    wrap.appendChild(it);
+  }
+  if (!(d.results || []).length) {
+    const p = document.createElement('div');
+    p.className = 'hint';
+    p.textContent = '还没探测过。点上面按钮，会对每个模型发一条最小请求，判断账号是否可用。';
+    wrap.appendChild(p);
+  }
+
+  const apply = document.createElement('div');
+  apply.className = 'hint';
+  apply.innerHTML =
+    '无权限（403 Model is blocked）需要找管理员开通：' +
+    ' <a href="https://deepops.yuanbao.woa.com/" target="_blank" rel="noopener">deepops 运营平台</a> ·' +
+    ' 预算管理 <a href="https://xy.woa.com/xy/app/prod/deepops_admin/litellm-budget" target="_blank" rel="noopener">litellm-budget</a>';
+  wrap.appendChild(apply);
+  return wrap;
+}
+
+function fillAgentForm(a) {
+  $('ag-name').value = a.name || '';
+  $('ag-desc').value = a.description || '';
+  $('ag-tools').value = a.tools || '';
+  $('ag-body').value = a.body || '';
+}
+
+function wireConfigPanel() {
+  /* 事件在 buildConfigPanel 里逐个绑定，这里留空以便扩展 */
+}
+
 async function stopLocal(name) {
   if (!confirm(`结束「${name}」？\n会杀掉对应的 tc 进程和 tmux 会话，记录会保留在「归档」里，之后还能恢复。`)) return;
   await api(`/api/local-sessions/${encodeURIComponent(name)}`, { method: 'DELETE' });
@@ -1049,6 +1288,9 @@ async function boot() {
     };
   });
   $('btn-plan').onclick = () => togglePlanMode();
+  $('btn-agents').onclick = () => showConfig('agents');
+  $('btn-perms').onclick = () => showConfig('perms');
+  $('btn-probe').onclick = () => showConfig('probe');
 
   state.events = [];
   render();

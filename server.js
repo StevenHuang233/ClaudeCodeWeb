@@ -9,10 +9,13 @@ const { config, validateCwd } = require('./src/config');
 const { Session, listHistory } = require('./src/session');
 const local = require('./src/local');
 const { LocalSession } = require('./src/localSession');
+const agents = require('./src/agents');
+const models = require('./src/models');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const SESSIONS = new Map();
 const SSE_CLIENTS = new Set();
+let probeRunning = false;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -161,6 +164,76 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/sessions' && method === 'GET') {
     return sendJSON(res, 200, { items: Array.from(SESSIONS.values()).map((s) => s.toJSON()) });
   }
+
+  /* ---------------- 子 agent / 权限 / 模型权限 ---------------- */
+
+  if (pathname === '/api/agents' && method === 'GET') {
+    return sendJSON(res, 200, { items: agents.listAgents(), dir: agents.agentsDir() });
+  }
+
+  if (pathname === '/api/agents' && method === 'POST') {
+    if (config.readOnly) return sendJSON(res, 403, { error: '只读模式' });
+    const body = await readBody(req);
+    try {
+      return sendJSON(res, 201, agents.saveAgent(body.name, body));
+    } catch (err) {
+      return sendJSON(res, 400, { error: err.message });
+    }
+  }
+
+  const delAgent = pathname.match(/^\/api\/agents\/([\w-]+)$/);
+  if (delAgent && method === 'DELETE') {
+    if (config.readOnly) return sendJSON(res, 403, { error: '只读模式' });
+    try {
+      return sendJSON(res, 200, agents.deleteAgent(delAgent[1]));
+    } catch (err) {
+      return sendJSON(res, 400, { error: err.message });
+    }
+  }
+
+  if (pathname === '/api/settings' && method === 'GET') {
+    return sendJSON(res, 200, { settings: agents.readSettings(), path: agents.settingsPath() });
+  }
+
+  if (pathname === '/api/settings' && method === 'PUT') {
+    if (config.readOnly) return sendJSON(res, 403, { error: '只读模式' });
+    const body = await readBody(req);
+    const cur = agents.readSettings();
+    const next = Object.assign({}, cur);
+    if (body.permissions) next.permissions = body.permissions;
+    if (body.model !== undefined) next.model = body.model;
+    for (const k of Object.keys(body.extra || {})) next[k] = body.extra[k];
+    agents.writeSettings(next);
+    return sendJSON(res, 200, { settings: next, path: agents.settingsPath() });
+  }
+
+  if (pathname === '/api/models/probe') {
+    if (config.readOnly) return sendJSON(res, 403, { error: '只读模式' });
+    // 探测要发十几条请求，放后台跑，前端轮询，避免把请求挂住
+    if (method === 'GET') {
+      const cache = models.readCache();
+      return sendJSON(res, 200, Object.assign({ running: probeRunning }, cache || { results: [] }));
+    }
+    if (probeRunning) return sendJSON(res, 409, { error: '上一轮探测还没跑完' });
+    const body = await readBody(req);
+    const cwd = body.cwd || config.defaultCwd;
+    const check = validateCwd(cwd);
+    if (!check.ok) return sendJSON(res, 400, { error: check.error });
+    const only = Array.isArray(body.models) ? body.models : null;
+    probeRunning = true;
+    (async () => {
+      try {
+        await models.probeAll(config.gatewayModels.models, check.cwd, !!body.force, only);
+      } catch (err) {
+        /* ignore */
+      } finally {
+        probeRunning = false;
+      }
+    })();
+    return sendJSON(res, 202, { started: true });
+  }
+
+  /* -------------------------------------------------------------- */
 
   /* 审视历史会话：只读地把记录渲染出来，不起任何进程 */
   if (pathname === '/api/history/preview' && method === 'GET') {

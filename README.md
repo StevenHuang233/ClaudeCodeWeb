@@ -306,7 +306,9 @@ export CCWEB_RUN_DIR=/mnt/share/tclaude/ccweb                    # 本项目的�
 
 ### Subagent
 
-在配置目录的 `agents/` 下放 markdown：
+**页面上「子 agent」入口可以直接增删改**（写 `<config>/agents/*.md`），不用手动编辑文件。
+
+也可以手动放：
 
 ```
 $CLAUDE_CONFIG_DIR/agents/xxx.md      # 全局（默认 ~/.tclaude/agents/）
@@ -324,6 +326,35 @@ tools: Bash, Read, Glob, Grep
 ```
 
 放好后跑一次，`init` 事件的 `agents` 列表里会多出 `ceph-helper`。
+
+### 权限设置
+
+**页面上「权限设置」入口**直接编辑 `<config>/settings.json` 的 `permissions.allow` / `deny`，一行一条：
+
+```
+Bash(git status)
+Bash(git diff:*)
+Bash(ls:*)
+Read(*)
+```
+
+规则对新会话生效；**运行中的会话**用左侧「权限模式」下拉框切（结构化走 `set_permission_mode` 指令，原生 TUI 走 Shift+Tab）。
+
+### 模型权限探测
+
+**页面上「模型权限」入口**会对每个网关模型发一条最小请求，判断账号能不能用：
+
+| 结果 | 含义 |
+| --- | --- |
+| `ok` | 可用，并显示单次花费 |
+| `blocked` | `403 Model is blocked`，需管理员开通 |
+| `rate_limited` | 上游容量不足（429 / No fallback） |
+| `invalid` / `budget` | 模型名无效 / 额度耗尽 |
+
+无权限的模型要找管理员：deepops 运营平台（`https://deepops.yuanbao.woa.com/`）、预算管理（`https://xy.woa.com/xy/app/prod/deepops_admin/litellm-budget`）。
+
+> ⚠️ **探测是要花钱的**。实测跑完 18 个模型一轮约 **$2.14**（主要花在 `[1m]` 那些带大缓存写入的模型上）。
+> 结果会缓存到 `<runDir>/model-probe.json`，别频繁 `force` 重测。想省钱就只测关心的几个。
 
 ### 把 tclaude 整个装到共享盘
 
@@ -366,7 +397,29 @@ export DISABLE_AUTOUPDATER=1     # 共用二进制时别让它自更新
 
 ---
 
-## 12. 目录结构
+## 12. 作为 Skill 使用
+
+`skills/claudecodeweb/` 是一个标准的 Claude Code Skill，整目录拷进 `<config>/skills/` 即可用：
+
+```bash
+cp -r skills/claudecodeweb ~/.tclaude/skills/
+```
+
+之后 Claude Code 自己就知道怎么用这套东西了。也可以在命令行直接调：
+
+```bash
+export CCWEB_URL=http://127.0.0.1:18787
+export CCWEB_TOKEN=<你的令牌>
+
+skills/claudecodeweb/scripts/ccweb.sh status
+skills/claudecodeweb/scripts/ccweb.sh new mytask /data/workspace
+skills/claudecodeweb/scripts/ccweb.sh ask mytask "看下这个报错"
+skills/claudecodeweb/scripts/ccweb.sh locals
+```
+
+`ask` 会新建会话 → 发消息 → 等结果，打印回复和花费，适合脚本化调用。
+
+## 13. 目录结构
 
 ```
 ClaudeCodeWeb/
@@ -396,7 +449,7 @@ ClaudeCodeWeb/
 
 ---
 
-## 13. 安全
+## 14. 安全
 
 - 默认只监听 `127.0.0.1`；**`CCWEB_HOST=0.0.0.0` 但没设 `CCWEB_TOKEN` 时服务会拒绝启动**
 - 令牌只保护 `/api/*`；静态资源不含秘密（否则 `?token=` 打开后 CSS/JS 会被 401，页面会变成裸 HTML）
@@ -407,7 +460,7 @@ ClaudeCodeWeb/
 
 ---
 
-## 14. 排错
+## 15. 排错
 
 | 现象 | 原因 / 处理 |
 | --- | --- |

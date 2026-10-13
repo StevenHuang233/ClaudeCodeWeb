@@ -181,6 +181,32 @@ details.thinking > div { margin-top: 6px; color: var(--text-dim); white-space: p
 .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2, start) infinite; }
 @keyframes blink { to { visibility: hidden; } }
 
+.cfg-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.cfg-btns button { padding: 4px 8px; font-size: 11px; }
+
+.cfg-panel { display: flex; flex-direction: column; gap: 10px; max-width: 860px; }
+.cfg-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cfg-head b { font-size: 14px; }
+.cfg-form { display: flex; flex-direction: column; gap: 6px; }
+.cfg-form label { font-size: 12px; color: var(--text-dim); }
+.cfg-form input,
+.cfg-form textarea {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  resize: vertical;
+}
+.cfg-form input:focus,
+.cfg-form textarea:focus { border-color: var(--accent); }
+.cfg-form button { align-self: flex-start; padding: 6px 14px; }
+.cfg-panel a { color: var(--accent-2); }
+
 .review-bar {
   display: flex;
   align-items: center;
