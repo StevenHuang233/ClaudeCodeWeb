@@ -417,6 +417,13 @@ async function selectSession(id) {
   const data = await api(`/api/sessions/${id}`);
   state.events = data.events || [];
   state.review = null;
+  state.currentSource = (data.session && data.session.source) || null;
+  state.currentSessionId = (data.session && data.session.cliSessionId) || null;
+  state.currentCwd = (data.session && data.session.cwd) || null;
+  // 下拉框回显当前会话在用的模型
+  const sel = $('sel-model');
+  const m = data.session && data.session.model;
+  if (m && Array.from(sel.options).some((o) => o.value === m)) sel.value = m;
   const kind = data.session && data.session.kind;
   $('key-row').hidden = !(kind === 'mirror' || kind === 'tui');
   render();
@@ -496,6 +503,36 @@ function tsName() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
   return `tc-${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+/** 切换当前会话的模型；不支持就地切换的（结构化模式）改为用新模型重开 */
+async function changeModel() {
+  const model = $('sel-model').value;
+  if (!state.activeId || state.review) return; // 没有活动会话时，下拉框只影响新建
+  try {
+    await api(`/api/sessions/${state.activeId}/model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    await refreshSessions();
+    return;
+  } catch (err) {
+    const reopen = confirm(
+      `${err.message}\n\n要用「${model}」重开本对话吗？\n会新起一个终端会话并保留上下文。`
+    );
+    const resumeFrom = state.currentSessionId || (state.currentSource && state.currentSource.name);
+    if (reopen && resumeFrom) {
+      await startLocal({
+        name: `m-${Date.now().toString(36).slice(-5)}`,
+        resumeFrom,
+        model,
+        cwd: state.currentCwd || undefined,
+      });
+    } else {
+      await refreshSessions(); // 还原下拉框
+    }
+  }
 }
 
 /** 新建 = 起一个 tmux 会话跑 tc，同时 Web 绑定上去，两边永远是同一个进程 */
@@ -824,6 +861,7 @@ async function boot() {
     e.target.style.height = Math.min(e.target.scrollHeight, 220) + 'px';
   });
   $('inp-cwd').addEventListener('change', loadLocal);
+  $('sel-model').addEventListener('change', () => changeModel().catch((err) => alert(err.message)));
 
   state.events = [];
   render();

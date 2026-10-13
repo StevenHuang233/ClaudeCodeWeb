@@ -255,6 +255,29 @@ class LocalSession extends EventEmitter {
     return true;
   }
 
+  /**
+   * 运行中切换模型。
+   * CLI 的 stream-json 协议没有 set_model 控制指令（只有 set_permission_mode），
+   * 所以只有原生 TUI / 镜像模式能靠 `/model` 斜杠命令做到；
+   * 结构化模式只能带着 --resume 用新模型重开。
+   */
+  setModel(model) {
+    if (this.kind !== 'mirror' && this.kind !== 'tui') {
+      throw new Error('结构化模式不支持运行中切换模型，需用新模型重开本对话');
+    }
+    const name = String(model || '').trim();
+    if (!name || !/^[A-Za-z0-9_.[\]-]+$/.test(name)) throw new Error('非法模型名');
+    try {
+      execFileSync('tmux', ['send-keys', '-t', this.tmuxTarget, '-l', `/model ${name}`], { stdio: 'ignore' });
+      execFileSync('tmux', ['send-keys', '-t', this.tmuxTarget, 'Enter'], { stdio: 'ignore' });
+    } catch (err) {
+      throw new Error(`tmux send-keys 失败: ${err.message}`);
+    }
+    this._push({ type: 'ccweb', subtype: 'model_changed', model: name });
+    this.model = name;
+    return true;
+  }
+
   /** 镜像模式下从网页敲按键（白名单，避免把任意字符串当 tmux key 名执行） */
   sendKey(key) {
     if (this.kind !== 'mirror' && this.kind !== 'tui') throw new Error('仅镜像 / 原生 TUI 会话支持按键');

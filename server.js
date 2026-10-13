@@ -446,6 +446,21 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 202, { ok: true });
   }
 
+  if (pathname.endsWith('/model') && method === 'POST') {
+    const body = await readBody(req);
+    const model = String(body.model || '').trim();
+    if (!model) return sendJSON(res, 400, { error: '缺少 model' });
+    if (typeof s.setModel !== 'function') {
+      return sendJSON(res, 400, { error: '该会话不支持运行中切换模型', reopenable: true });
+    }
+    try {
+      s.setModel(model);
+    } catch (err) {
+      return sendJSON(res, 400, { error: err.message, reopenable: true });
+    }
+    return sendJSON(res, 202, { ok: true, model });
+  }
+
   if (pathname.endsWith('/keys') && method === 'POST') {
     const body = await readBody(req);
     const key = String(body.key || '');
