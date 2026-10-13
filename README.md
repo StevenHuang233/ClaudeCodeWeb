@@ -243,6 +243,26 @@ Web 输入框 → tmux send-keys 敲进 TUI → TUI 处理 → 写会话记录 �
 | 原生 TUI / 镜像 | **就地生效** —— 发 `/model <name>` 斜杠命令，终端里能看到 `Set model to ...` |
 | 结构化 | 不支持就地切换（CLI 的 stream-json 协议没有 `set_model` 指令），会提示**用新模型重开**：新起一个终端会话 `--resume`，上下文保留 |
 
+### Web 上做成了 UI 控件的命令
+
+| 控件 | 位置 | 转成什么命令 | 备注 |
+| --- | --- | --- | --- |
+| 模型 | 输入框右下 | `/model <名字>` | 另见上一节 |
+| 思考强度 | 输入框右下 | `/effort <low\|medium\|high>` | 终端回显 `Set effort level to ...` |
+| 压缩上下文 | 输入框上方 | `/compact` | 省 token |
+| 清空 | 输入框上方 | `/clear` | 结构化模式下改为开全新对话 |
+| 用量 | 输入框上方 | `/usage` | 弹出用量面板 |
+| 诊断 | 输入框上方 | `/doctor` | 检查 CLI 环境 |
+| 权限模式 | 左侧栏 | 见下 | **不是**斜杠命令，见下 |
+
+**权限模式的特殊之处**：`/permission-mode` 并不是有效的斜杠命令（实测报 `unknown skill`），各模式走不同路径：
+
+| 会话模式 | 切换方式 |
+| --- | --- |
+| 结构化 | `set_permission_mode` 控制指令，Web 直接生效 ✅ |
+| 原生 TUI | 只能 **Shift+Tab** 循环（按键条上已提供该键），实测 `accept edits on` → `plan mode on` ✅ |
+| 镜像 | 不支持，请在终端操作 |
+
 ### 在 Web 输入框里用斜杠命令
 
 输入框里直接敲 `/model`、`/clear` 这类斜杠命令即可，行为取决于模式：
