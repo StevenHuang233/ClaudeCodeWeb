@@ -76,6 +76,9 @@ html, body {
 }
 .item:hover { border-color: var(--accent); }
 .item.active { border-color: var(--accent); background: #221d1a; }
+.item.disabled { opacity: .55; cursor: not-allowed; }
+.item.disabled:hover { border-color: var(--border); }
+.item button.small { margin-top: 6px; padding: 2px 8px; font-size: 11px; }
 .item .t { display: flex; justify-content: space-between; gap: 8px; }
 .item .t b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .s { color: var(--text-dim); font-size: 11px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -169,6 +172,17 @@ details.thinking > div { margin-top: 6px; color: var(--text-dim); white-space: p
 .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2, start) infinite; }
 @keyframes blink { to { visibility: hidden; } }
 
+.key-row {
+  border-top: 1px solid var(--border);
+  padding: 8px 20px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 .composer { border-top: 1px solid var(--border); padding: 12px 20px; display: flex; gap: 10px; align-items: flex-end; }
 .composer textarea {
   flex: 1;
@@ -186,3 +200,18 @@ details.thinking > div { margin-top: 6px; color: var(--text-dim); white-space: p
 .composer-actions { display: flex; gap: 8px; }
 
 .empty { color: var(--text-dim); text-align: center; margin: auto; }
+
+pre.terminal {
+  background: #08090c;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0;
+  max-height: 62vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #c8d0dc;
+}

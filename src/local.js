@@ -1,0 +1,241 @@
+'use strict';
+
+/**
+ * 发现「本机已经在跑的 tc」：
+ *  1) managed：用 scripts/tc-run.js 启动的（无论在 tmux、终端还是后台），有 meta.json + jsonl + fifo
+ *  2) foreign：直接跑 tclaude / claude 的进程。只有在 tmux 窗格里才能接管（靠 pipe-pane 抓屏）
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const { config } = require('./config');
+
+function ensureRunDir() {
+  try {
+    fs.mkdirSync(config.runDir, { recursive: true });
+  } catch (err) {
+    /* ignore */
+  }
+  return config.runDir;
+}
+
+function isAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function baseName(args) {
+  return String(args || '').trim().split(/\s+/)[0].split('/').pop();
+}
+
+/** 读取 *.meta.json，列出我们管理过的本地 tc 会话 */
+function listManaged() {
+  const dir = ensureRunDir();
+  let files = [];
+  try {
+    files = fs.readdirSync(dir);
+  } catch (err) {
+    return [];
+  }
+  const items = [];
+  for (const f of files) {
+    if (!f.endsWith('.meta.json')) continue;
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+      m.name = m.name || f.replace(/\.meta\.json$/, '');
+      m.alive = isAlive(m.pid);
+      items.push(m);
+    } catch (err) {
+      /* 跳过坏文件 */
+    }
+  }
+  return items.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+}
+
+function psRows() {
+  let out = '';
+  try {
+    out = execFileSync('ps', ['-eo', 'pid=,ppid=,tty=,args='], { encoding: 'utf8' });
+  } catch (err) {
+    return [];
+  }
+  const rows = [];
+  for (const line of out.split('\n')) {
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
+    if (!m) continue;
+    rows.push({ pid: +m[1], ppid: +m[2], tty: m[3], args: m[4] });
+  }
+  return rows;
+}
+
+function tmuxAvailable() {
+  try {
+    execFileSync('tmux', ['-V'], { stdio: 'ignore' });
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function tmuxPanes() {
+  if (!tmuxAvailable()) return [];
+  let out = '';
+  try {
+    out = execFileSync(
+      'tmux',
+      ['list-panes', '-a', '-F', '#{pane_id}\t#{pane_pid}\t#{session_name}:#{window_index}.#{pane_index}\t#{pane_current_command}'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+  } catch (err) {
+    return [];
+  }
+  const panes = [];
+  for (const line of out.split('\n')) {
+    const p = line.split('\t');
+    if (p.length < 3) continue;
+    panes.push({ paneId: p[0], panePid: +p[1], target: p[2], cmd: p[3] || '' });
+  }
+  return panes;
+}
+
+/** 往上找祖先，判断该进程是否跑在某个 tmux 窗格下 */
+function paneOf(pid, ppidMap, panes) {
+  let cur = pid;
+  let depth = 0;
+  while (cur && depth++ < 32) {
+    const hit = panes.find((p) => p.panePid === cur);
+    if (hit) return hit;
+    cur = ppidMap.get(cur) || 0;
+  }
+  return null;
+}
+
+function listForeign() {
+  const rows = psRows();
+  const ppidMap = new Map(rows.map((r) => [r.pid, r.ppid]));
+  const panes = tmuxPanes();
+  const managedPids = new Set(listManaged().map((m) => m.pid).filter(Boolean));
+
+  const out = [];
+  for (const r of rows) {
+    // 排除：守护进程、claude-code 内核子进程、我们自己的 runner
+    if (
+      r.args.includes('__tclaude_daemon') ||
+      r.args.includes('runtime/claude-code') ||
+      r.args.includes('tc-run.js') ||
+      r.args.includes('ccweb')
+    ) {
+      continue;
+    }
+    const b = baseName(r.args);
+    if (b !== 'tclaude' && b !== 'claude') continue;
+    if (managedPids.has(r.pid)) continue;
+
+    // 属于某个 managed 会话的子进程（我们用 tc-run.js 起的）不算「外部 tc」
+    const chain = [];
+    let cur = r.pid;
+    let d = 0;
+    while (cur && d++ < 32) {
+      chain.push(cur);
+      cur = ppidMap.get(cur) || 0;
+    }
+    if (chain.some((p) => managedPids.has(p))) continue;
+
+    const pane = paneOf(r.pid, ppidMap, panes);
+    out.push({
+      pid: r.pid,
+      tty: r.tty,
+      cmd: r.args.slice(0, 140),
+      cli: b,
+      tmux: pane ? { paneId: pane.paneId, target: pane.target } : null,
+      attachable: !!pane,
+      reason: pane
+        ? null
+        : '不在 tmux 窗格里，无法接管。用 scripts/tc-run.js 启动，或先跑在 tmux 里。',
+    });
+  }
+  return out;
+}
+
+/** 启动一个本地 tc 会话（放进 tmux，方便随时 tmux attach 看同一个进程） */
+function startManaged(opts) {
+  const dir = ensureRunDir();
+  const name = String(opts.name || '').trim() || `tc-${Date.now().toString(36)}`;
+  if (!/^[A-Za-z0-9_.-]+$/.test(name)) throw new Error('会话名只能包含字母数字、下划线、点和短横线');
+
+  const runner = path.join(__dirname, '..', 'scripts', 'tc-run.js');
+  const args = [
+    runner,
+    '--name', name,
+    '--cwd', opts.cwd,
+    '--model', opts.model,
+    '--perm', opts.permissionMode,
+    '--cli', config.cli,
+  ];
+
+  let launchedBy = 'tmux';
+  if (tmuxAvailable()) {
+    const cmd = [process.execPath].concat(args).map((a) => `'${String(a).replace(/'/g, "'\\''")}'`).join(' ');
+    execFileSync('tmux', ['new-session', '-d', '-s', name, '-c', opts.cwd, cmd], { stdio: 'ignore' });
+  } else {
+    launchedBy = 'detached';
+    const { spawn } = require('child_process');
+    const child = spawn(process.execPath, args, { cwd: opts.cwd, detached: true, stdio: 'ignore' });
+    child.unref();
+  }
+
+  // 等 runner 写好 meta
+  const metaPath = path.join(dir, `${name}.meta.json`);
+  for (let i = 0; i < 40; i++) {
+    if (fs.existsSync(metaPath)) break;
+    execFileSync('sleep', ['0.1']);
+  }
+  let meta = null;
+  try {
+    meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  } catch (err) {
+    meta = null;
+  }
+  return { name, launchedBy, meta };
+}
+
+function stopManaged(name) {
+  const dir = ensureRunDir();
+  const safe = String(name).replace(/[^A-Za-z0-9_.-]/g, '');
+  let meta = null;
+  try {
+    meta = JSON.parse(fs.readFileSync(path.join(dir, `${safe}.meta.json`), 'utf8'));
+  } catch (err) {
+    /* ignore */
+  }
+  if (meta && isAlive(meta.pid)) {
+    try {
+      process.kill(Number(meta.pid), 'SIGTERM');
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  if (tmuxAvailable()) {
+    try {
+      execFileSync('tmux', ['kill-session', '-t', safe], { stdio: 'ignore' });
+    } catch (err) {
+      /* 可能本来就不在 tmux 里 */
+    }
+  }
+  for (const f of [`${safe}.meta.json`, `${safe}.fifo`]) {
+    try {
+      fs.unlinkSync(path.join(dir, f));
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  return { name: safe, killed: !!(meta && meta.pid) };
+}
+
+module.exports = { ensureRunDir, listManaged, listForeign, startManaged, stopManaged, tmuxAvailable, tmuxPanes, isAlive };

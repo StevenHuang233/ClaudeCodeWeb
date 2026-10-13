@@ -7,6 +7,8 @@ const { randomUUID } = require('crypto');
 
 const { config, validateCwd } = require('./src/config');
 const { Session, listHistory } = require('./src/session');
+const local = require('./src/local');
+const { LocalSession } = require('./src/localSession');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const SESSIONS = new Map();
@@ -160,12 +162,85 @@ async function handleApi(req, res, url) {
     return sendJSON(res, 200, { items: Array.from(SESSIONS.values()).map((s) => s.toJSON()) });
   }
 
+  /* ---------------- 本地已在跑的 tc：发现 / 启动 / 停止 ---------------- */
+
+  if (pathname === '/api/local-sessions' && method === 'GET') {
+    return sendJSON(res, 200, {
+      managed: local.listManaged(),
+      foreign: local.listForeign(),
+      tmuxAvailable: local.tmuxAvailable(),
+      runDir: config.runDir,
+    });
+  }
+
+  if (pathname === '/api/local-sessions' && method === 'POST') {
+    if (config.readOnly) return sendJSON(res, 403, { error: '只读模式' });
+    const body = await readBody(req);
+    const check = validateCwd(body.cwd || config.defaultCwd);
+    if (!check.ok) return sendJSON(res, 400, { error: check.error });
+    try {
+      const started = local.startManaged({
+        name: body.name,
+        cwd: check.cwd,
+        model: String(body.model || config.defaultModel),
+        permissionMode: String(body.permissionMode || config.permissionMode),
+      });
+      return sendJSON(res, 201, started);
+    } catch (err) {
+      return sendJSON(res, 400, { error: err.message });
+    }
+  }
+
+  const stopMatch = pathname.match(/^\/api\/local-sessions\/([\w.@-]+)$/);
+  if (stopMatch && method === 'DELETE') {
+    return sendJSON(res, 200, local.stopManaged(stopMatch[1]));
+  }
+
+  /* ------------------------------------------------------------------ */
+
   if (pathname === '/api/sessions' && method === 'POST') {
     if (config.readOnly) return sendJSON(res, 403, { error: '服务运行在只读模式（CCWEB_READ_ONLY=1）' });
     if (SESSIONS.size >= config.maxSessions) {
       return sendJSON(res, 429, { error: `会话数已达上限 ${config.maxSessions}` });
     }
     const body = await readBody(req);
+
+    // 绑定本地已经在跑的 tc，而不是自己起一个
+    if (body.source && body.source.kind === 'managed') {
+      const items = local.listManaged();
+      const meta = items.find((m) => m.name === body.source.name);
+      if (!meta) return sendJSON(res, 404, { error: `找不到本地会话 ${body.source.name}` });
+      if (!meta.alive) return sendJSON(res, 400, { error: `本地会话 ${body.source.name} 已退出` });
+      const s = new LocalSession({
+        kind: 'managed',
+        name: meta.name,
+        logPath: meta.logPath,
+        fifoPath: meta.fifoPath,
+        pid: meta.pid,
+        cwd: meta.cwd,
+        model: meta.model,
+      });
+      attachSession(s);
+      s.start();
+      return sendJSON(res, 201, { session: s.toJSON() });
+    }
+
+    if (body.source && body.source.kind === 'mirror') {
+      if (!local.tmuxAvailable()) return sendJSON(res, 400, { error: '本机没有 tmux，无法镜像' });
+      const target = String(body.source.tmuxTarget || '');
+      if (!/^[\w.@:=%-]+$/.test(target)) return sendJSON(res, 400, { error: '非法 tmux target' });
+      const s = new LocalSession({
+        kind: 'mirror',
+        tmuxTarget: target,
+        paneId: body.source.paneId || null,
+        pid: body.source.pid || null,
+        cwd: body.source.cwd || null,
+      });
+      attachSession(s);
+      s.start();
+      return sendJSON(res, 201, { session: s.toJSON() });
+    }
+
     const check = validateCwd(body.cwd || config.defaultCwd);
     if (!check.ok) return sendJSON(res, 400, { error: check.error });
 
@@ -248,6 +323,18 @@ async function handleApi(req, res, url) {
     if (!config.permissionModes.includes(mode)) return sendJSON(res, 400, { error: `不支持的 mode: ${mode}` });
     try {
       s.setPermissionMode(mode);
+    } catch (err) {
+      return sendJSON(res, 400, { error: err.message });
+    }
+    return sendJSON(res, 202, { ok: true });
+  }
+
+  if (pathname.endsWith('/keys') && method === 'POST') {
+    const body = await readBody(req);
+    const key = String(body.key || '');
+    if (typeof s.sendKey !== 'function') return sendJSON(res, 400, { error: '仅镜像会话支持按键' });
+    try {
+      s.sendKey(key);
     } catch (err) {
       return sendJSON(res, 400, { error: err.message });
     }

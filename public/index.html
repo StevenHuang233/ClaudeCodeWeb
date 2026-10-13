@@ -11,7 +11,8 @@
   <aside class="sidebar">
     <div class="brand">ClaudeCode<span>Web</span></div>
 
-    <button id="btn-new" class="primary">+ 新建会话</button>
+    <button id="btn-new" class="primary">+ 新建会话（服务内起进程）</button>
+    <button id="btn-local" class="ghost">+ 启动本地 tc（tmux，可共享）</button>
 
     <label class="field">
       <span>模型</span>
@@ -30,6 +31,12 @@
 
     <p id="hint" class="hint"></p>
 
+    <div class="sec-title">本机已发现的 tc（点击接入）</div>
+    <div id="local-list" class="list"></div>
+
+    <div class="sec-title">tmux / 终端里的 tc</div>
+    <div id="foreign-list" class="list"></div>
+
     <div class="sec-title">当前会话</div>
     <div id="session-list" class="list"></div>
 
@@ -44,6 +51,18 @@
     </header>
 
     <div id="messages" class="messages"></div>
+
+    <div id="key-row" class="key-row" hidden>
+      <span>快捷按键（镜像模式）：</span>
+      <button type="button" class="ghost small" data-key="Up">↑</button>
+      <button type="button" class="ghost small" data-key="Down">↓</button>
+      <button type="button" class="ghost small" data-key="Enter">Enter</button>
+      <button type="button" class="ghost small" data-key="Escape">Esc</button>
+      <button type="button" class="ghost small" data-key="Tab">Tab</button>
+      <button type="button" class="ghost small" data-key="y">y</button>
+      <button type="button" class="ghost small" data-key="n">n</button>
+      <button type="button" class="ghost small" data-key="C-c">Ctrl-C</button>
+    </div>
 
     <form id="composer" class="composer">
       <textarea id="input" rows="2" placeholder="Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>

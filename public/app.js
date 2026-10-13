@@ -174,6 +174,12 @@ function buildBlocks(events) {
       continue;
     }
 
+    if (e.type === 'ccweb' && e.subtype === 'terminal') {
+      const b = upsert('terminal', () => ({ kind: 'terminal', text: '' }));
+      b.text += e.data || '';
+      continue;
+    }
+
     if (e.type === 'ccweb' && e.subtype === 'exit') {
       upsert('exit', () => ({ kind: 'note', level: 'err', text: `CLI 进程已退出 (code=${e.code})` }));
       continue;
@@ -208,6 +214,14 @@ function toolResultText(res) {
       .join('\n');
   }
   return pretty(c);
+}
+
+function stripAnsi(s) {
+  return String(s || '')
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+    .replace(/\x1b[()][0-9A-Za-z]/g, '')
+    .replace(/\x1b[=>]/g, '');
 }
 
 function render() {
@@ -266,6 +280,10 @@ function render() {
             <button class="ghost" data-deny="${esc(b.requestId)}">拒绝</button>
           </div>
         </div>`;
+    } else if (b.kind === 'terminal') {
+      div.className = 'msg assistant';
+      div.innerHTML = `<div class="who">终端镜像（tmux）</div>
+        <pre class="terminal">${esc(stripAnsi(b.text).slice(-60000))}</pre>`;
     } else if (b.kind === 'note') {
       div.innerHTML = `<span class="chip ${b.level === 'err' ? 'err' : 'ok'}">${esc(b.text)}</span>`;
     } else if (b.kind === 'result') {
@@ -360,6 +378,8 @@ async function selectSession(id) {
   state.activeId = id;
   const data = await api(`/api/sessions/${id}`);
   state.events = data.events || [];
+  const isMirror = data.session && data.session.kind === 'mirror';
+  $('key-row').hidden = !isMirror;
   render();
   openStream(id);
   await refreshSessions();
@@ -404,6 +424,111 @@ async function sendMessage() {
     });
   } catch (err) {
     alert(err.message);
+  }
+}
+
+/* ---------------------------- 本机 tc 发现/绑定 ---------------------------- */
+
+async function bindManaged(name) {
+  const data = await api('/api/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source: { kind: 'managed', name } }),
+  });
+  state.events = [];
+  render();
+  await selectSession(data.session.id);
+}
+
+async function bindMirror(item) {
+  const data = await api('/api/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source: { kind: 'mirror', tmuxTarget: item.tmux.target, paneId: item.tmux.paneId, pid: item.pid },
+    }),
+  });
+  state.events = [];
+  render();
+  await selectSession(data.session.id);
+}
+
+async function startLocal() {
+  const name = (prompt('本地会话名（同时是 tmux 会话名，留空自动生成）', '') || '').trim();
+  const data = await api('/api/local-sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: name || undefined,
+      cwd: $('inp-cwd').value.trim() || (state.cfg && state.cfg.defaultCwd),
+      model: $('sel-model').value,
+      permissionMode: $('sel-perm').value,
+    }),
+  });
+  await loadLocal();
+  await bindManaged(data.name);
+}
+
+async function stopLocal(name) {
+  if (!confirm(`结束本地会话 ${name}？（会杀掉对应的 tc 进程）`)) return;
+  await api(`/api/local-sessions/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  await loadLocal();
+}
+
+async function loadLocal() {
+  let data;
+  try {
+    data = await api('/api/local-sessions');
+  } catch (err) {
+    return;
+  }
+  const managed = data.managed || [];
+  const foreign = data.foreign || [];
+
+  const el = $('local-list');
+  el.replaceChildren();
+  for (const m of managed) {
+    const d = document.createElement('div');
+    d.className = 'item' + (m.alive ? '' : ' disabled');
+    d.innerHTML = `<div class="t"><b>${esc(m.name)}</b><span>${m.alive ? '运行中' : '已退出'}</span></div>
+      <div class="s">${esc(m.model || '')} · ${esc(m.cwd || '')}</div>`;
+    d.title = m.alive ? '点击接入这个本地会话（共享同一个 tc 进程）' : '进程已退出';
+    if (m.alive) d.onclick = () => bindManaged(m.name);
+    const btn = document.createElement('button');
+    btn.className = 'ghost small';
+    btn.textContent = '结束';
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      stopLocal(m.name);
+    };
+    d.appendChild(btn);
+    el.appendChild(d);
+  }
+  if (!managed.length) {
+    const p = document.createElement('div');
+    p.className = 'hint';
+    p.textContent = '暂无。点上方按钮，或在终端里跑 scripts/tc-run.js';
+    el.appendChild(p);
+  }
+
+  const fl = $('foreign-list');
+  fl.replaceChildren();
+  for (const f of foreign) {
+    const d = document.createElement('div');
+    d.className = 'item' + (f.attachable ? '' : ' disabled');
+    d.innerHTML = `<div class="t"><b>${esc(f.cli)} · pid ${f.pid}</b><span>${
+      f.attachable ? '可镜像' : '不可接管'
+    }</span></div>
+      <div class="s">${esc(f.tmux ? f.tmux.target : f.tty || '')}</div>`;
+    d.title = f.attachable ? '点击镜像这个 tmux 窗格' : f.reason || '无法接管';
+    if (f.attachable) d.onclick = () => bindMirror(f);
+    fl.appendChild(d);
+  }
+  if (!foreign.length) {
+    const p = document.createElement('div');
+    p.className = 'hint';
+    p.textContent = data.tmuxAvailable ? '没检测到其他 tc 进程' : '本机没有 tmux';
+    fl.appendChild(p);
   }
 }
 
@@ -453,6 +578,8 @@ async function boot() {
     : '';
 
   $('btn-new').onclick = () => createSession(null);
+  $('btn-local').onclick = () =>
+    startLocal().catch((err) => alert(err.message));
   $('composer').onsubmit = (e) => {
     e.preventDefault();
     sendMessage();
@@ -465,6 +592,19 @@ async function boot() {
       alert(err.message);
     }
   };
+  $('key-row').querySelectorAll('[data-key]').forEach((el) => {
+    el.onclick = async () => {
+      try {
+        await api(`/api/sessions/${state.activeId}/keys`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: el.getAttribute('data-key') }),
+        });
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+  });
   $('input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -478,8 +618,12 @@ async function boot() {
   $('inp-cwd').addEventListener('change', loadHistory);
 
   await createSession(null);
+  await loadLocal();
   await loadHistory();
-  setInterval(refreshSessions, 5000);
+  setInterval(() => {
+    refreshSessions();
+    loadLocal();
+  }, 5000);
 }
 
 boot().catch((err) => {

@@ -83,6 +83,8 @@ const config = {
   maxSessions: Number(process.env.CCWEB_MAX_SESSIONS || 32),
   readOnly: process.env.CCWEB_READ_ONLY === '1',
   tclaudeHome: TCLAUDE_HOME,
+  // 本地 tc 会话的落盘目录：*.jsonl（事件流）、*.fifo（输入）、*.meta.json（元信息）
+  runDir: process.env.CCWEB_RUN_DIR || path.join(HOME, '.cache', 'ccweb'),
   cheapestModel: CHEAPEST_MODEL,
   permissionModes: PERMISSION_MODES,
 };

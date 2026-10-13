@@ -67,6 +67,51 @@ ssh -L 18787:127.0.0.1:18787 <user>@<机器IP>
 # 然后访问 http://127.0.0.1:18787
 ```
 
+## 绑定本地已经在跑的 tc
+
+上面那种模式下进程是 Web 服务自己起的。如果想**用你自己在终端/tmux 里启动的 tc**，页面左侧「本机已发现的 tc」会自动列出，点一下就接入，两边共享同一个进程和同一份上下文。
+
+### 模式一：托管（推荐，完整能力）
+
+在**任意终端**（tmux、iTerm、IDE 终端都行）里跑：
+
+```bash
+cd ClaudeCodeWeb
+node scripts/tc-run.js --name mytc --cwd /data/workspace --model claude-haiku-4-5
+```
+
+- 终端里直接打字就是发消息，输出是美化后的文本
+- 同时把原始事件流写到 `~/.cache/ccweb/mytc.jsonl`，输入走 `mytc.fifo`
+- Web 侧自动发现并接入，看到的是**同一进程**的完整结构化事件（工具、思考、花费）
+
+不想手动敲命令，也可以在页面点「启动本地 tc」——它会起一个同名的 **tmux 会话**，你随时 `tmux attach -t mytc` 就能看到同一个 tc 的输出，还能直接打字。
+
+### 模式二：镜像（接管别人启动的 tc）
+
+已经在 tmux 窗格里跑着的 `tclaude` / `claude`，即使不是我们启动的，也能接管：
+
+```bash
+tmux new-session -d -s work -c /data/workspace tclaude
+```
+
+页面「tmux / 终端里的 tc」里会出现 `work:0.0`，点击后：
+
+- 底层用 `tmux pipe-pane` 抓屏，网页上就是一块终端镜像（自动去 ANSI 颜色）
+- 输入用 `tmux send-keys`，网页敲的字等于你在那个窗格里敲
+- 另有快捷按键条（↑ ↓ Enter Esc y n Ctrl-C），用来过 TUI 的确认框
+
+**限制**：镜像是屏幕级镜像，拿不到结构化的工具调用和花费统计；TUI 的 spinner 动画会让文本略有交错的字符。
+
+### 发现规则
+
+`GET /api/local-sessions` 每 5 秒扫一次：
+
+- `managed`：`~/.cache/ccweb/*.meta.json`，带进程存活状态
+- `foreign`：`ps -eo` 找 `tclaude`/`claude` 主进程，再沿父进程链匹配 tmux 窗格
+  - **在 tmux 窗格里** → `attachable: true`，可镜像
+  - **不在 tmux 里** → 无法接管。原因很直接：没有多路复用器就没法从外部读到一个已经在跑的进程的终端输出。要么用 `scripts/tc-run.js` 启动，要么先放进 tmux。
+  - 我们自己托管的子进程会被排除，不重复出现在外部列表
+
 ## 调试请务必用最便宜的模型
 
 同一条请求（"只回复两个字：收到"）实测单次花费：
