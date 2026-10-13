@@ -32,6 +32,7 @@ class LocalSession extends EventEmitter {
     this.status = 'idle';
     this.events = [];
     this.seq = 0;
+    this.sessionId = opts.sessionId || null;
     this.createdAt = Date.now();
     this.lastError = null;
     this._timer = null;
@@ -137,6 +138,7 @@ class LocalSession extends EventEmitter {
       if (evt && evt.type === 'system' && evt.subtype === 'init') {
         this.model = evt.model || this.model;
         this.cwd = evt.cwd || this.cwd;
+        if (evt.session_id) this.sessionId = evt.session_id;
       }
       if (evt && evt.type === 'result') {
         this.status = 'idle';
@@ -255,6 +257,7 @@ class LocalSession extends EventEmitter {
       model: this.model,
       status: this.status,
       title: this.title,
+      cliSessionId: this.sessionId || null,
       createdAt: this.createdAt,
       lastError: this.lastError,
       lastResult: this.lastResult || null,

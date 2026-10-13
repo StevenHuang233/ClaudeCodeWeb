@@ -7,6 +7,7 @@ const state = {
   activeId: null,
   events: [],
   es: null,
+  boundName: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -347,6 +348,7 @@ function updateHeader(active) {
     esc(active.cwd),
     esc(active.model),
     active.cliSessionId ? `session ${esc(String(active.cliSessionId).slice(0, 8))}` : null,
+    active.source && active.source.name ? `终端: tmux attach -t ${esc(active.source.name)}` : null,
     r ? `$${r.cost.toFixed(4)}` : null,
     esc(active.status),
   ]
@@ -453,16 +455,24 @@ async function bindMirror(item) {
   await selectSession(data.session.id);
 }
 
-async function startLocal() {
-  const name = (prompt('本地会话名（同时是 tmux 会话名，留空自动生成）', '') || '').trim();
+function tsName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `tc-${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+/** 新建 = 起一个 tmux 会话跑 tc，同时 Web 绑定上去，两边永远是同一个进程 */
+async function startLocal(options) {
+  const opts = options || {};
   const data = await api('/api/local-sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name: name || undefined,
-      cwd: $('inp-cwd').value.trim() || (state.cfg && state.cfg.defaultCwd),
-      model: $('sel-model').value,
+      name: opts.name || tsName(),
+      cwd: opts.cwd || $('inp-cwd').value.trim() || (state.cfg && state.cfg.defaultCwd),
+      model: opts.model || $('sel-model').value,
       permissionMode: $('sel-perm').value,
+      resumeFrom: opts.resumeFrom || null,
     }),
   });
   await loadLocal();
@@ -482,18 +492,22 @@ async function loadLocal() {
   } catch (err) {
     return;
   }
-  const managed = data.managed || [];
+  const active = data.active || [];
+  const history = data.history || [];
   const foreign = data.foreign || [];
 
-  const el = $('local-list');
+  /* 当前对话：终端和 Web 一一对应 */
+  const el = $('active-list');
   el.replaceChildren();
-  for (const m of managed) {
+  for (const m of active) {
     const d = document.createElement('div');
-    d.className = 'item' + (m.alive ? '' : ' disabled');
-    d.innerHTML = `<div class="t"><b>${esc(m.name)}</b><span>${m.alive ? '运行中' : '已退出'}</span></div>
-      <div class="s">${esc(m.model || '')} · ${esc(m.cwd || '')}</div>`;
-    d.title = m.alive ? '点击接入这个本地会话（共享同一个 tc 进程）' : '进程已退出';
-    if (m.alive) d.onclick = () => bindManaged(m.name);
+    const bound = state.boundName === m.name;
+    d.className = 'item' + (bound ? ' active' : '');
+    d.innerHTML = `<div class="t"><b>${esc(m.name)}</b><span>${bound ? 'Web 已接入' : '运行中'}</span></div>
+      <div class="s">${esc(m.model || '')} · ${esc(m.cwd || '')}</div>
+      <div class="s cmd">${esc(m.attachCmd || '（无 tmux）')}</div>`;
+    d.title = '点击在 Web 打开这个对话（与终端同一个进程）';
+    d.onclick = () => bindManaged(m.name);
     const btn = document.createElement('button');
     btn.className = 'ghost small';
     btn.textContent = '结束';
@@ -504,11 +518,36 @@ async function loadLocal() {
     d.appendChild(btn);
     el.appendChild(d);
   }
-  if (!managed.length) {
+  if (!active.length) {
     const p = document.createElement('div');
     p.className = 'hint';
-    p.textContent = '暂无。点上方按钮，或在终端里跑 scripts/tc-run.js';
+    p.textContent = '暂无。点上方「新建对话」，或在终端跑 scripts/tc-run.js';
     el.appendChild(p);
+  }
+
+  /* 历史记录：点击恢复 = 新开一个终端会话来跑它 */
+  const hl = $('history-list');
+  hl.replaceChildren();
+  for (const h of history) {
+    const d = document.createElement('div');
+    d.className = 'item';
+    const when = String(h.timestamp || '').slice(0, 16).replace('T', ' ');
+    d.innerHTML = `<div class="t"><b>${esc(String(h.sessionId).slice(0, 8))}</b><span>${esc(when)}</span></div>
+      <div class="s">${h.source === 'managed' && h.name ? esc(h.name) + ' · ' : ''}${esc(h.cwd || '')}</div>`;
+    d.title = '点击恢复：会新起一个终端会话（tmux）并接入 Web';
+    d.onclick = () =>
+      startLocal({
+        name: `r-${String(h.sessionId).slice(0, 8)}-${Date.now().toString(36).slice(-4)}`,
+        resumeFrom: h.sessionId,
+        cwd: h.cwd || undefined,
+      });
+    hl.appendChild(d);
+  }
+  if (!history.length) {
+    const p = document.createElement('div');
+    p.className = 'hint';
+    p.textContent = '暂无历史。结束一个对话后它会落到这里';
+    hl.appendChild(p);
   }
 
   const fl = $('foreign-list');
@@ -529,26 +568,6 @@ async function loadLocal() {
     p.className = 'hint';
     p.textContent = data.tmuxAvailable ? '没检测到其他 tc 进程' : '本机没有 tmux';
     fl.appendChild(p);
-  }
-}
-
-async function loadHistory() {
-  const cwd = $('inp-cwd').value.trim() || (state.cfg && state.cfg.defaultCwd) || '';
-  const el = $('history-list');
-  try {
-    const data = await api(`/api/history?cwd=${encodeURIComponent(cwd)}`);
-    el.replaceChildren();
-    (data.items || []).forEach((h) => {
-      const d = document.createElement('div');
-      d.className = 'item';
-      d.innerHTML = `<div class="t"><b>${esc(String(h.sessionId).slice(0, 8))}</b><span>${esc(
-        (h.timestamp || '').slice(0, 16).replace('T', ' ')
-      )}</span></div>`;
-      d.onclick = () => createSession(h.sessionId);
-      el.appendChild(d);
-    });
-  } catch (err) {
-    el.replaceChildren();
   }
 }
 
@@ -577,9 +596,7 @@ async function boot() {
     ? `调试默认用最便宜的模型：${cheap}（实测同请求单次约 $0.006）`
     : '';
 
-  $('btn-new').onclick = () => createSession(null);
-  $('btn-local').onclick = () =>
-    startLocal().catch((err) => alert(err.message));
+  $('btn-new').onclick = () => startLocal().catch((err) => alert(err.message));
   $('composer').onsubmit = (e) => {
     e.preventDefault();
     sendMessage();
@@ -615,11 +632,11 @@ async function boot() {
     e.target.style.height = 'auto';
     e.target.style.height = Math.min(e.target.scrollHeight, 220) + 'px';
   });
-  $('inp-cwd').addEventListener('change', loadHistory);
+  $('inp-cwd').addEventListener('change', loadLocal);
 
-  await createSession(null);
+  state.events = [];
+  render();
   await loadLocal();
-  await loadHistory();
   setInterval(() => {
     refreshSessions();
     loadLocal();

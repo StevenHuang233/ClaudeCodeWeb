@@ -28,6 +28,7 @@ const cwd = path.resolve(arg('cwd') || process.cwd());
 const model = arg('model') || 'claude-haiku-4-5';
 const perm = arg('perm') || 'acceptEdits';
 const cli = arg('cli') || 'tclaude';
+const resumeFrom = arg('resume') || '';
 const runDir = process.env.CCWEB_RUN_DIR || path.join(os.homedir(), '.cache', 'ccweb');
 
 fs.mkdirSync(runDir, { recursive: true });
@@ -43,34 +44,48 @@ if (!fs.existsSync(fifoPath)) {
   }
 }
 
-fs.writeFileSync(
-  metaPath,
-  JSON.stringify({
-    name,
-    cwd,
-    model,
-    permissionMode: perm,
-    cli,
-    pid: process.pid,
-    logPath,
-    fifoPath,
-    startedAt: Date.now(),
-  })
-);
+const meta = {
+  name,
+  cwd,
+  model,
+  permissionMode: perm,
+  cli,
+  pid: process.pid,
+  logPath,
+  fifoPath,
+  startedAt: Date.now(),
+  resumedFrom: resumeFrom || null,
+  exitedAt: null,
+  sessionId: null,
+};
+function saveMeta() {
+  try {
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+  } catch (err) {
+    /* ignore */
+  }
+}
+saveMeta();
 
 const isTTY = !!process.stdout.isTTY;
 const dim = (s) => (isTTY ? `\x1b[2m${s}\x1b[0m` : s);
 const accent = (s) => (isTTY ? `\x1b[36m${s}\x1b[0m` : s);
 
-console.log(dim(`[tc-run] ${name} · ${cwd} · ${model} · pid=${process.pid}`));
+console.log(dim(`[tc-run] ${name} · ${cwd} · ${model} · pid=${process.pid}${resumeFrom ? ` · 恢复自 ${resumeFrom.slice(0, 8)}` : ''}`));
 console.log(dim(`[tc-run] 事件流: ${logPath}`));
 console.log(dim('[tc-run] 直接打字发消息，Ctrl+C 结束\n'));
 
-const child = spawn(
-  cli,
-  ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--model', model, '--permission-mode', perm],
-  { cwd, stdio: ['pipe', 'pipe', 'pipe'] }
-);
+const cliArgs = [
+  '-p',
+  '--input-format', 'stream-json',
+  '--output-format', 'stream-json',
+  '--verbose',
+  '--model', model,
+  '--permission-mode', perm,
+];
+if (resumeFrom) cliArgs.push('--resume', resumeFrom);
+
+const child = spawn(cli, cliArgs, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
 
 let childGone = false;
 function send(obj) {
@@ -143,7 +158,13 @@ function pretty(line) {
       dim(`\n✓ 完成 · $${(e.total_cost_usd || 0).toFixed(4)} · ${e.duration_ms || 0}ms · ${e.num_turns || 0} 轮\n\n`)
     );
   } else if (e.type === 'system' && e.subtype === 'init') {
-    process.stdout.write(dim(`[init] ${e.model || ''} · ${(e.tools || []).length} 个工具\n`));
+    if (e.session_id && !meta.sessionId) {
+      meta.sessionId = e.session_id;
+      saveMeta();
+    }
+    process.stdout.write(
+      dim(`[init] ${e.model || ''} · ${(e.tools || []).length} 个工具 · session ${String(e.session_id || '').slice(0, 8)}\n`)
+    );
   }
 }
 
@@ -179,11 +200,9 @@ child.on('exit', (code) => {
   childGone = true;
   logStream.end();
   console.log(dim(`\n[tc-run] ${name} 结束 (code=${code})`));
-  try {
-    fs.unlinkSync(metaPath);
-  } catch (err) {
-    /* ignore */
-  }
+  // 保留 meta，这样它会出现在 Web 的「历史记录」里，可一键恢复
+  meta.exitedAt = Date.now();
+  saveMeta();
   process.exit(code == null ? 1 : code);
 });
 

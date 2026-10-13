@@ -165,8 +165,37 @@ async function handleApi(req, res, url) {
   /* ---------------- 本地已在跑的 tc：发现 / 启动 / 停止 ---------------- */
 
   if (pathname === '/api/local-sessions' && method === 'GET') {
+    const active = local.listActive();
+
+    // 历史 = 我们托管过但已结束的会话 + Claude Code 自己留在 ~/.tclaude/projects 下的会话
+    const archived = local.listArchived();
+    const cwd = url.searchParams.get('cwd') || config.defaultCwd;
+    let cliHistory = [];
+    const check = validateCwd(cwd);
+    if (check.ok) {
+      cliHistory = listHistory(config.tclaudeHome, check.cwd, 30).map((h) => ({
+        sessionId: h.sessionId,
+        cwd: h.cwd,
+        timestamp: h.timestamp,
+        source: 'cli',
+        name: null,
+        model: null,
+      }));
+    }
+
+    const activeIds = new Set(active.map((m) => m.sessionId).filter(Boolean));
+    const seen = new Set();
+    const history = [];
+    for (const h of archived.concat(cliHistory)) {
+      if (!h.sessionId || activeIds.has(h.sessionId) || seen.has(h.sessionId)) continue;
+      seen.add(h.sessionId);
+      history.push(h);
+    }
+    history.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+
     return sendJSON(res, 200, {
-      managed: local.listManaged(),
+      active,
+      history: history.slice(0, 40),
       foreign: local.listForeign(),
       tmuxAvailable: local.tmuxAvailable(),
       runDir: config.runDir,
@@ -184,8 +213,9 @@ async function handleApi(req, res, url) {
         cwd: check.cwd,
         model: String(body.model || config.defaultModel),
         permissionMode: String(body.permissionMode || config.permissionMode),
+        resumeFrom: body.resumeFrom || null,
       });
-      return sendJSON(res, 201, started);
+      return sendJSON(res, 201, Object.assign({ resumeFrom: body.resumeFrom || null }, started));
     } catch (err) {
       return sendJSON(res, 400, { error: err.message });
     }

@@ -79,6 +79,11 @@ html, body {
 .item.disabled { opacity: .55; cursor: not-allowed; }
 .item.disabled:hover { border-color: var(--border); }
 .item button.small { margin-top: 6px; padding: 2px 8px; font-size: 11px; }
+.item .cmd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--accent);
+}
 .item .t { display: flex; justify-content: space-between; gap: 8px; }
 .item .t b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .s { color: var(--text-dim); font-size: 11px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

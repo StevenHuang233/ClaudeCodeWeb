@@ -50,12 +50,69 @@ function listManaged() {
       const m = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
       m.name = m.name || f.replace(/\.meta\.json$/, '');
       m.alive = isAlive(m.pid);
+      m.tmuxTarget = tmuxHasSession(m.name) ? `${m.name}:0.0` : null;
+      m.attachCmd = m.tmuxTarget ? `tmux attach -t ${m.name}` : null;
+      if (!m.sessionId) m.sessionId = sessionIdFromLog(m.logPath);
       items.push(m);
     } catch (err) {
       /* 跳过坏文件 */
     }
   }
   return items.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+}
+
+/** 从事件日志里找 Claude 的 session_id，历史记录靠它 --resume 恢复 */
+function sessionIdFromLog(logPath) {
+  if (!logPath) return null;
+  let fd;
+  try {
+    fd = fs.openSync(logPath, 'r');
+  } catch (err) {
+    return null;
+  }
+  try {
+    const buf = Buffer.alloc(131072);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    for (const line of buf.toString('utf8', 0, n).split('\n')) {
+      if (!line.includes('"init"')) continue;
+      try {
+        const o = JSON.parse(line);
+        if (o && o.type === 'system' && o.subtype === 'init' && o.session_id) return o.session_id;
+      } catch (err) {
+        /* 继续找 */
+      }
+    }
+  } catch (err) {
+    /* ignore */
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+function listActive() {
+  return listManaged().filter((m) => m.alive);
+}
+
+function listArchived(limit = 30) {
+  return listManaged()
+    .filter((m) => !m.alive)
+    .sort((a, b) => (b.exitedAt || b.startedAt || 0) - (a.exitedAt || a.startedAt || 0))
+    .slice(0, limit)
+    .map((m) => ({
+      sessionId: m.sessionId,
+      name: m.name,
+      cwd: m.cwd,
+      model: m.model,
+      timestamp: new Date(m.exitedAt || m.startedAt || Date.now()).toISOString(),
+      source: 'managed',
+      logPath: m.logPath,
+      resumedFrom: m.resumedFrom || null,
+    }));
 }
 
 function psRows() {
@@ -77,6 +134,16 @@ function psRows() {
 function tmuxAvailable() {
   try {
     execFileSync('tmux', ['-V'], { stdio: 'ignore' });
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function tmuxHasSession(name) {
+  if (!tmuxAvailable()) return false;
+  try {
+    execFileSync('tmux', ['has-session', '-t', name], { stdio: 'ignore' });
     return true;
   } catch (err) {
     return false;
@@ -168,6 +235,7 @@ function startManaged(opts) {
   const dir = ensureRunDir();
   const name = String(opts.name || '').trim() || `tc-${Date.now().toString(36)}`;
   if (!/^[A-Za-z0-9_.-]+$/.test(name)) throw new Error('会话名只能包含字母数字、下划线、点和短横线');
+  if (tmuxHasSession(name)) throw new Error(`tmux 会话 ${name} 已存在，换一个名字`);
 
   const runner = path.join(__dirname, '..', 'scripts', 'tc-run.js');
   const args = [
@@ -178,6 +246,7 @@ function startManaged(opts) {
     '--perm', opts.permissionMode,
     '--cli', config.cli,
   ];
+  if (opts.resumeFrom) args.push('--resume', String(opts.resumeFrom));
 
   let launchedBy = 'tmux';
   if (tmuxAvailable()) {
@@ -228,9 +297,13 @@ function stopManaged(name) {
       /* 可能本来就不在 tmux 里 */
     }
   }
-  for (const f of [`${safe}.meta.json`, `${safe}.fifo`]) {
+  // 保留 meta：结束后它进入「历史记录」，可一键恢复（会新开一个终端会话）
+  if (meta) {
     try {
-      fs.unlinkSync(path.join(dir, f));
+      meta.exitedAt = Date.now();
+      meta.alive = false;
+      delete meta.alive;
+      fs.writeFileSync(path.join(dir, `${safe}.meta.json`), JSON.stringify(meta));
     } catch (err) {
       /* ignore */
     }
@@ -238,4 +311,17 @@ function stopManaged(name) {
   return { name: safe, killed: !!(meta && meta.pid) };
 }
 
-module.exports = { ensureRunDir, listManaged, listForeign, startManaged, stopManaged, tmuxAvailable, tmuxPanes, isAlive };
+module.exports = {
+  ensureRunDir,
+  listManaged,
+  listActive,
+  listArchived,
+  listForeign,
+  startManaged,
+  stopManaged,
+  tmuxAvailable,
+  tmuxHasSession,
+  tmuxPanes,
+  sessionIdFromLog,
+  isAlive,
+};
