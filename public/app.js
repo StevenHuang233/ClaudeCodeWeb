@@ -824,10 +824,51 @@ const PROBE_LABEL = {
   unknown: '未知',
 };
 
+/**
+ * 子 agent 的模型候选：别名 + 网关当前可用的完整模型 ID（实时读 /api/config）。
+ * 探测过的话顺带标出哪些用不了。
+ */
+function agentModelOptions() {
+  const status = new Map(((state.probe || {}).results || []).map((r) => [r.model, r.status]));
+  const tag = (id) => {
+    const s = status.get(id);
+    if (s === 'blocked') return ' · 无权限需申请';
+    if (s === 'rate_limited') return ' · 上游限流';
+    if (s === 'invalid') return ' · 名称无效';
+    if (s === 'budget') return ' · 额度耗尽';
+    return '';
+  };
+  const head = [
+    ['inherit', '跟随主会话的模型'],
+    ['haiku', '便宜快'],
+    ['sonnet', '均衡'],
+    ['opus', '最强最贵'],
+  ];
+  const seen = new Set(head.map((h) => h[0]));
+  const rest = [];
+  for (const m of (state.cfg && state.cfg.models) || []) {
+    const id = typeof m === 'string' ? m : m.id;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    rest.push([id, id + tag(id)]);
+  }
+  return head
+    .concat(rest)
+    .map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`)
+    .join('');
+}
+
 async function showConfig(view) {
   state.configView = view;
   try {
-    if (view === 'agents') state.agents = (await api('/api/agents')).items || [];
+    if (view === 'agents') {
+      state.agents = (await api('/api/agents')).items || [];
+      try {
+        state.probe = await api('/api/models/probe'); // 用来标注哪些模型用不了
+      } catch (err) {
+        /* 没探测过就只列名字 */
+      }
+    }
     if (view === 'perms') {
       const d = await api('/api/settings');
       state.settings = (d && d.settings) || {};
@@ -909,12 +950,7 @@ function buildConfigPanel() {
       <input id="ag-desc" placeholder="description：什么时候该用它（主 agent 靠这个选人）" />
       <input id="ag-tools" placeholder="tools：Bash, Read, Glob, Grep（留空=继承全部）" />
       <input id="ag-model" list="ag-model-list" placeholder="model：haiku / sonnet / opus / 完整 ID / inherit" />
-      <datalist id="ag-model-list">
-        <option value="inherit">跟随主会话的模型</option>
-        <option value="haiku">便宜快</option>
-        <option value="sonnet">均衡</option>
-        <option value="opus">最强最贵</option>
-      </datalist>
+      <datalist id="ag-model-list">${agentModelOptions()}</datalist>
       <textarea id="ag-body" rows="8" placeholder="正文就是它的 system prompt"></textarea>
     `;
     const save = document.createElement('button');
