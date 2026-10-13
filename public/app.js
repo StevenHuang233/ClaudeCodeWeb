@@ -12,6 +12,17 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+/** 安全绑定：元素缺失时只告警，不让整个页面初始化失败 */
+function on(id, ev, fn) {
+  const el = $(id);
+  if (!el) {
+    console.warn('[ccweb] 缺少元素 #' + id + '，已跳过绑定 ' + ev);
+    return null;
+  }
+  el.addEventListener(ev, fn);
+  return el;
+}
 const messagesEl = $('messages');
 
 /* ------------------------------ 请求封装 ------------------------------ */
@@ -284,9 +295,15 @@ function render() {
   $('input').disabled = ro;
   $('btn-send').disabled = ro;
   $('btn-stop').disabled = ro;
-  $('chat-model').disabled = ro || !state.activeId;
-  $('chat-effort').disabled = ro || !state.activeId;
-  $('cmd-row').querySelectorAll('button').forEach((b) => (b.disabled = ro || !state.activeId));
+  const dis = (id, v) => {
+    const el = $(id);
+    if (el) el.disabled = v;
+  };
+  dis('chat-model', ro || !state.activeId);
+  dis('chat-effort', ro || !state.activeId);
+  ($('cmd-row') || { querySelectorAll: () => [] })
+    .querySelectorAll('button')
+    .forEach((b) => (b.disabled = ro || !state.activeId));
 
   for (const b of blocks) {
     const div = document.createElement('div');
@@ -1232,20 +1249,20 @@ async function boot() {
     ? `调试默认用最便宜的模型：${cheap}（实测同请求单次约 $0.006）`
     : '';
 
-  $('btn-new').onclick = () => startLocal().catch((err) => alert(err.message));
+  on('btn-new', 'click', () => startLocal().catch((err) => alert(err.message)));
   $('composer').onsubmit = (e) => {
     e.preventDefault();
     sendMessage();
   };
-  $('btn-stop').onclick = async () => {
+  on('btn-stop', 'click', async () => {
     if (!state.activeId) return;
     try {
       await api(`/api/sessions/${state.activeId}/interrupt`, { method: 'POST' });
     } catch (err) {
       alert(err.message);
     }
-  };
-  $('key-row').querySelectorAll('[data-key]').forEach((el) => {
+  });
+  ($('key-row') || { querySelectorAll: () => [] }).querySelectorAll('[data-key]').forEach((el) => {
     el.onclick = async () => {
       try {
         await api(`/api/sessions/${state.activeId}/keys`, {
@@ -1268,29 +1285,27 @@ async function boot() {
     e.target.style.height = 'auto';
     e.target.style.height = Math.min(e.target.scrollHeight, 220) + 'px';
   });
-  $('inp-cwd').addEventListener('change', loadLocal);
-  $('sel-model').addEventListener('change', () => changeModel($('sel-model').value).catch((err) => alert(err.message)));
-  $('chat-model').addEventListener('change', () => changeModel($('chat-model').value).catch((err) => alert(err.message)));
-  $('chat-effort').addEventListener('change', async () => {
+  on('inp-cwd', 'change', loadLocal);
+  on('sel-model', 'change', () => changeModel($('sel-model').value).catch((err) => alert(err.message)));
+  on('chat-model', 'change', () => changeModel($('chat-model').value).catch((err) => alert(err.message)));
+  on('chat-effort', 'change', async () => {
     const v = $('chat-effort').value;
     $('chat-effort').value = '';
     if (!v) return;
     if (!state.activeId) return alert('先打开一个对话');
     await handleSlash(`/effort ${v}`);
   });
-  $('sel-perm').addEventListener('change', () =>
-    applyPermissionMode($('sel-perm').value).catch((err) => alert(err.message))
-  );
-  $('cmd-row').querySelectorAll('[data-cmd]').forEach((el) => {
+  on('sel-perm', 'change', () => applyPermissionMode($('sel-perm').value).catch((err) => alert(err.message)));
+  ($('cmd-row') || { querySelectorAll: () => [] }).querySelectorAll('[data-cmd]').forEach((el) => {
     el.onclick = async () => {
       if (!state.activeId) return alert('先打开一个对话');
       await handleSlash(el.getAttribute('data-cmd'));
     };
   });
-  $('btn-plan').onclick = () => togglePlanMode();
-  $('btn-agents').onclick = () => showConfig('agents');
-  $('btn-perms').onclick = () => showConfig('perms');
-  $('btn-probe').onclick = () => showConfig('probe');
+  on('btn-plan', 'click', () => togglePlanMode());
+  on('btn-agents', 'click', () => showConfig('agents'));
+  on('btn-perms', 'click', () => showConfig('perms'));
+  on('btn-probe', 'click', () => showConfig('probe'));
 
   state.events = [];
   render();

@@ -11,8 +11,13 @@
   <aside class="sidebar">
     <div class="brand">ClaudeCode<span>Web</span></div>
 
-    <button id="btn-new" class="primary">+ 新建会话（服务内起进程）</button>
-    <button id="btn-local" class="ghost">+ 启动本地 tc（tmux，可共享）</button>
+    <button id="btn-new" class="primary">+ 新建对话（起终端 + Web 同步）</button>
+
+    <div class="cfg-btns">
+      <button id="btn-agents" class="ghost small">子 agent</button>
+      <button id="btn-perms" class="ghost small">权限设置</button>
+      <button id="btn-probe" class="ghost small">模型权限</button>
+    </div>
 
     <label class="field">
       <span>模型（新建对话的默认）</span>
