@@ -299,12 +299,15 @@ async function handleApi(req, res, url) {
       }));
     }
 
+    // 归档标记要对所有来源生效（CLI 历史条目本身不带这个字段）
+    const archivedSet = local.readArchived();
     const activeIds = new Set(active.map((m) => m.sessionId).filter(Boolean));
     const seen = new Set();
     const history = [];
     for (const h of archived.concat(cliHistory)) {
       if (!h.sessionId || activeIds.has(h.sessionId) || seen.has(h.sessionId)) continue;
       seen.add(h.sessionId);
+      h.archived = archivedSet.has(h.sessionId);
       history.push(h);
     }
     history.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
