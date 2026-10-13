@@ -1000,7 +1000,12 @@ function wireConfigPanel() {
 }
 
 async function stopLocal(name) {
-  if (!confirm(`结束「${name}」？\n会杀掉对应的 tc 进程和 tmux 会话，记录会保留在「归档」里，之后还能恢复。`)) return;
+  if (
+    !confirm(
+      `结束「${name}」？\n会杀掉对应的 tc 进程和 tmux 会话。\n记录会保留在「历史记录」里，之后可以审视或用新终端恢复。\n（想收纳起来再点它的「归档」）`
+    )
+  )
+    return;
   await api(`/api/local-sessions/${encodeURIComponent(name)}`, { method: 'DELETE' });
   await loadLocal();
 }
@@ -1066,7 +1071,8 @@ async function loadLocal() {
     d.onclick = () => bindManaged(m.name);
     const btn = document.createElement('button');
     btn.className = 'ghost small';
-    btn.textContent = '结束（归档）';
+    btn.textContent = '结束（进历史）';
+    btn.title = '杀掉进程和 tmux 会话，记录保留在「历史记录」里';
     btn.onclick = (ev) => {
       ev.stopPropagation();
       stopLocal(m.name);
@@ -1075,7 +1081,7 @@ async function loadLocal() {
     const del = document.createElement('button');
     del.className = 'ghost small danger';
     del.textContent = '删除';
-    del.title = '杀掉进程并删除全部记录，不进归档';
+    del.title = '杀掉进程并删除全部记录，不进历史记录也不进归档';
     del.onclick = (ev) => {
       ev.stopPropagation();
       purgeLocal(m.name);
