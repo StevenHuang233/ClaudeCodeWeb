@@ -41,6 +41,7 @@ html, body {
 .brand span { color: var(--accent); }
 
 .field { display: flex; flex-direction: column; gap: 4px; }
+.fields { display: flex; flex-direction: column; gap: 6px; }
 .field > span { font-size: 12px; color: var(--text-dim); }
 .field select, .field input {
   background: var(--bg-soft-2);

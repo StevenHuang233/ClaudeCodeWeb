@@ -1222,12 +1222,7 @@ async function loadLocal() {
     d.appendChild(arc);
     hl.appendChild(d);
   }
-  if (!history.length) {
-    const p = document.createElement('div');
-    p.className = 'hint';
-    p.textContent = '暂无。结束一个对话后它会落到这里';
-    hl.appendChild(p);
-  }
+
 
   /* 归档：折叠区，这里删除 = 删文件 */
   const al = $('archive-list');
@@ -1288,12 +1283,7 @@ async function loadLocal() {
     al.appendChild(d);
   }
   $('archive-count').textContent = String(archive.length);
-  if (!archive.length) {
-    const p = document.createElement('div');
-    p.className = 'hint';
-    p.textContent = '暂无归档';
-    al.appendChild(p);
-  }
+
 
   const fl = $('foreign-list');
   fl.replaceChildren();
@@ -1308,18 +1298,7 @@ async function loadLocal() {
     if (f.attachable) d.onclick = () => bindMirror(f);
     fl.appendChild(d);
   }
-  if (!foreign.length) {
-    const p = document.createElement('div');
-    p.className = 'hint';
-    p.textContent = data.tmuxAvailable ? '没有可接管的（tmux 里没跑 tc）' : '本机没有 tmux';
-    fl.appendChild(p);
-  }
-  if (data.unattachable > 0) {
-    const p = document.createElement('div');
-    p.className = 'hint';
-    p.textContent = `另有 ${data.unattachable} 个 tc 不在 tmux 里，无法接管`;
-    fl.appendChild(p);
-  }
+
 }
 
 /* --------------------------------- 初始化 --------------------------------- */
@@ -1343,10 +1322,9 @@ async function boot() {
   fillSelect($('sel-perm'), state.cfg.permissionModes, state.cfg.permissionMode);
   $('inp-cwd').value = state.cfg.defaultCwd;
 
-  const cheap = state.cfg.cheapestModel;
-  $('hint').textContent = cheap
-    ? `调试默认用最便宜的模型：${cheap}（实测同请求单次约 $0.006）`
-    : '';
+  const cheap = state.cfg && state.cfg.cheapestModel;
+  $('sel-model').title = cheap ? `模型 · 调试建议用最便宜的 ${cheap}` : '模型';
+  $('sel-perm').title = '权限模式';
 
   on('btn-new', 'click', () => startLocal().catch((err) => alert(err.message)));
   $('composer').onsubmit = (e) => {

@@ -11,46 +11,35 @@
   <aside class="sidebar">
     <div class="brand">ClaudeCode<span>Web</span></div>
 
-    <button id="btn-new" class="primary">+ 新建对话（起终端 + Web 同步）</button>
+    <button id="btn-new" class="primary">+ 新建对话</button>
 
     <div class="cfg-btns">
-      <button id="btn-agents" class="ghost small">子 agent</button>
-      <button id="btn-perms" class="ghost small">权限设置</button>
-      <button id="btn-probe" class="ghost small">模型权限</button>
+      <button id="btn-agents" class="ghost small" title="管理子 agent">子 agent</button>
+      <button id="btn-perms" class="ghost small" title="编辑权限 allow/deny">权限</button>
+      <button id="btn-probe" class="ghost small" title="探测各模型是否可用">模型权限</button>
     </div>
 
-    <label class="field">
-      <span>模型（新建对话的默认）</span>
-      <select id="sel-model"></select>
-    </label>
+    <div class="fields">
+      <select id="sel-model" title="模型（新建对话的默认）"></select>
+      <input id="inp-cwd" type="text" spellcheck="false" placeholder="工作目录" title="工作目录" />
+      <select id="sel-perm" title="权限模式"></select>
+    </div>
 
-    <label class="field">
-      <span>工作目录</span>
-      <input id="inp-cwd" type="text" spellcheck="false" />
-    </label>
-
-    <label class="field">
-      <span>权限模式</span>
-      <select id="sel-perm"></select>
-    </label>
-
-    <p id="hint" class="hint"></p>
-
-    <div class="sec-title">当前对话（终端 ⇄ Web）</div>
+    <div class="sec-title">当前对话</div>
     <div id="active-list" class="list"></div>
 
-    <div class="sec-title">历史记录（关掉之后的对话）</div>
+    <div class="sec-title">历史记录</div>
     <div id="history-list" class="list"></div>
 
     <details class="fold">
-      <summary>归档（<span id="archive-count">0</span>）</summary>
+      <summary>归档 <span id="archive-count">0</span></summary>
       <div id="archive-list" class="list"></div>
     </details>
 
-    <div class="sec-title">tmux 里的其他 tc（可镜像）</div>
+    <div class="sec-title">可镜像</div>
     <div id="foreign-list" class="list"></div>
 
-    <div class="sec-title">Web 已接入</div>
+    <div class="sec-title">已接入</div>
     <div id="session-list" class="list"></div>
   </aside>
 
