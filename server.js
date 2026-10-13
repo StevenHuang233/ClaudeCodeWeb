@@ -235,6 +235,8 @@ async function handleApi(req, res, url) {
       history.push(h);
     }
     history.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+    const historyList = history.filter((h) => !h.archived).slice(0, 40);
+    const archiveList = history.filter((h) => h.archived).slice(0, 200);
 
     // 只列能真正接管的（在 tmux 窗格里的）。不在 tmux 里的只能看个数，避免刷屏
     const allForeign = local.listForeign();
@@ -242,7 +244,8 @@ async function handleApi(req, res, url) {
 
     return sendJSON(res, 200, {
       active,
-      history: history.slice(0, 40),
+      history: historyList,
+      archive: archiveList,
       foreign,
       unattachable: allForeign.length - foreign.length,
       tmuxAvailable: local.tmuxAvailable(),
@@ -280,6 +283,14 @@ async function handleApi(req, res, url) {
   if (delHist && method === 'DELETE') {
     const cwd = url.searchParams.get('cwd') || config.defaultCwd;
     return sendJSON(res, 200, local.deleteHistory(delHist[1], cwd));
+  }
+
+  // 历史记录 -> 归档（或取消归档）
+  const arcHist = pathname.match(/^\/api\/history\/([\w.:-]+)\/archive$/);
+  if (arcHist && method === 'POST') {
+    const body = await readBody(req);
+    const on = body.on !== false;
+    return sendJSON(res, 200, { sessionId: arcHist[1], archived: local.setArchived(arcHist[1], on) });
   }
 
   /* ------------------------------------------------------------------ */

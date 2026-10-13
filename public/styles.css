@@ -192,6 +192,21 @@ details.thinking > div { margin-top: 6px; color: var(--text-dim); white-space: p
 }
 .review-bar button { padding: 3px 10px; font-size: 12px; }
 
+details.fold { margin-top: 8px; }
+details.fold > summary {
+  cursor: pointer;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--text-dim);
+  list-style: none;
+  padding: 4px 0;
+}
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: '▸ '; }
+details.fold[open] > summary::before { content: '▾ '; }
+details.fold > .list { margin-top: 6px; }
+
 .key-row {
   border-top: 1px solid var(--border);
   padding: 8px 20px 0;

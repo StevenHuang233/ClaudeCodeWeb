@@ -220,8 +220,8 @@ class LocalSession extends EventEmitter {
       this._push({ type: 'user', message: { role: 'user', content: text } });
       return true;
     }
-    // mirror：把文本敲进 tmux 窗格
-    this._push({ type: 'user', message: { role: 'user', content: text } });
+    // mirror：把文本敲进 tmux 窗格（只有它没有记录文件，得自己补一条 user 事件）
+    if (this.kind === 'mirror') this._push({ type: 'user', message: { role: 'user', content: text } });
     const lines = String(text).split('\n');
     try {
       for (let i = 0; i < lines.length; i++) {

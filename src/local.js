@@ -186,6 +186,35 @@ function deleteHistory(sessionId, cwd) {
   return { removed };
 }
 
+/* ---------------- 归档：在「历史记录」之上再叠一层 ----------------
+   运行中的对话 --结束--> 历史记录 --归档--> 归档（折叠），归档里删除 = 删文件
+------------------------------------------------------------------ */
+
+function archivedPath() {
+  return path.join(ensureRunDir(), 'archived.json');
+}
+
+function readArchived() {
+  try {
+    const d = JSON.parse(fs.readFileSync(archivedPath(), 'utf8'));
+    return new Set((d.sessionIds || []).filter(Boolean));
+  } catch (err) {
+    return new Set();
+  }
+}
+
+function setArchived(sessionId, on) {
+  const s = readArchived();
+  if (on) s.add(String(sessionId));
+  else s.delete(String(sessionId));
+  try {
+    fs.writeFileSync(archivedPath(), JSON.stringify({ sessionIds: Array.from(s) }));
+  } catch (err) {
+    /* ignore */
+  }
+  return !!on;
+}
+
 /** 从事件日志里找 Claude 的 session_id，历史记录靠它 --resume 恢复 */
 function sessionIdFromLog(logPath) {
   if (!logPath) return null;
@@ -224,6 +253,7 @@ function listActive() {
 }
 
 function listArchived(limit = 30) {
+  const archivedSet = readArchived();
   return listManaged()
     .filter((m) => !m.alive)
     .sort((a, b) => (b.exitedAt || b.startedAt || 0) - (a.exitedAt || a.startedAt || 0))
@@ -237,6 +267,7 @@ function listArchived(limit = 30) {
       source: 'managed',
       logPath: m.logPath,
       resumedFrom: m.resumedFrom || null,
+      archived: archivedSet.has(m.sessionId),
     }));
 }
 
@@ -453,5 +484,7 @@ module.exports = {
   projectDir,
   purgeManaged,
   deleteHistory,
+  setArchived,
+  readArchived,
   isAlive,
 };

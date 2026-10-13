@@ -556,7 +556,18 @@ async function purgeLocal(name) {
   await loadLocal();
 }
 
-/** 删除一条归档 */
+/** 历史记录 <-> 归档（只改标记，不动文件） */
+async function archiveHistory(h, on) {
+  const flag = on !== false;
+  await api(`/api/history/${encodeURIComponent(h.sessionId)}/archive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ on: flag }),
+  });
+  await loadLocal();
+}
+
+/** 删除一条归档（删文件） */
 async function deleteArchive(h) {
   if (!confirm(`删除归档 ${String(h.sessionId).slice(0, 8)}？\n对应的会话记录文件会被删除，不可恢复。`)) return;
   await api(`/api/history/${encodeURIComponent(h.sessionId)}?cwd=${encodeURIComponent(h.cwd || '')}`, {
@@ -575,6 +586,7 @@ async function loadLocal() {
   }
   const active = data.active || [];
   const history = data.history || [];
+  const archive = data.archive || [];
   const foreign = data.foreign || [];
 
   /* 当前对话：终端和 Web 一一对应 */
@@ -656,21 +668,71 @@ async function loadLocal() {
       });
     };
     d.appendChild(open);
-    const del = document.createElement('button');
-    del.className = 'ghost small danger';
-    del.textContent = '删除';
-    del.onclick = (ev) => {
+    const arc = document.createElement('button');
+    arc.className = 'ghost small';
+    arc.textContent = '归档';
+    arc.title = '收进归档区（折叠起来），不删文件';
+    arc.onclick = (ev) => {
       ev.stopPropagation();
-      deleteArchive(h);
+      archiveHistory(h);
     };
-    d.appendChild(del);
+    d.appendChild(arc);
     hl.appendChild(d);
   }
   if (!history.length) {
     const p = document.createElement('div');
     p.className = 'hint';
-    p.textContent = '暂无历史。结束一个对话后它会落到这里';
+    p.textContent = '暂无。结束一个对话后它会落到这里';
     hl.appendChild(p);
+  }
+
+  /* 归档：折叠区，这里删除 = 删文件 */
+  const al = $('archive-list');
+  al.replaceChildren();
+  for (const h of archive) {
+    const d = document.createElement('div');
+    d.className = 'item';
+    const when = String(h.timestamp || '').slice(0, 16).replace('T', ' ');
+    d.innerHTML = `<div class="t"><b>${esc(String(h.sessionId).slice(0, 8))}</b><span>${esc(when)}</span></div>
+      <div class="s">${h.source === 'managed' && h.name ? esc(h.name) + ' · ' : ''}${esc(h.cwd || '')}</div>`;
+    d.title = '点击审视';
+    d.onclick = () => previewHistory(h);
+    const open = document.createElement('button');
+    open.className = 'ghost small';
+    open.textContent = '打开（新终端）';
+    open.onclick = (ev) => {
+      ev.stopPropagation();
+      startLocal({
+        name: `r-${String(h.sessionId).slice(0, 8)}-${Date.now().toString(36).slice(-4)}`,
+        resumeFrom: h.sessionId,
+        cwd: h.cwd || undefined,
+      });
+    };
+    d.appendChild(open);
+    const back = document.createElement('button');
+    back.className = 'ghost small';
+    back.textContent = '移回历史';
+    back.onclick = (ev) => {
+      ev.stopPropagation();
+      archiveHistory(h, false);
+    };
+    d.appendChild(back);
+    const del = document.createElement('button');
+    del.className = 'ghost small danger';
+    del.textContent = '删除文件';
+    del.onclick = (ev) => {
+      ev.stopPropagation();
+      deleteArchive(h);
+    };
+    d.appendChild(del);
+    al.appendChild(d);
+  }
+  $('archive-count').textContent = String(archive.length);
+  if (!archive.length) {
+    const p = document.createElement('div');
+    p.className = 'hint';
+    p.textContent = '暂无归档';
+    al.appendChild(p);
   }
 
   const fl = $('foreign-list');

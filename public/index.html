@@ -34,8 +34,13 @@
     <div class="sec-title">当前对话（终端 ⇄ Web）</div>
     <div id="active-list" class="list"></div>
 
-    <div class="sec-title">归档（点击审视，打开/删除用条目上的按钮）</div>
+    <div class="sec-title">历史记录（关掉之后的对话）</div>
     <div id="history-list" class="list"></div>
+
+    <details class="fold">
+      <summary>归档（<span id="archive-count">0</span>）</summary>
+      <div id="archive-list" class="list"></div>
+    </details>
 
     <div class="sec-title">tmux 里的其他 tc（可镜像）</div>
     <div id="foreign-list" class="list"></div>
