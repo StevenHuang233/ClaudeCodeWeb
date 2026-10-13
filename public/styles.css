@@ -160,6 +160,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 }
 .card.tool { border-left: 3px solid var(--accent-2); }
 .card.perm { border-left: 3px solid var(--warn); }
+.card.plan { border-left: 3px solid var(--ok); }
+.card.plan .name { color: var(--ok); }
+.card.plan .body { max-height: 420px; overflow: auto; }
 .card .head { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 .card .name { font-weight: 600; color: var(--accent-2); }
 .card .badge { font-size: 11px; color: var(--text-dim); }

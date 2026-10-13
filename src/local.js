@@ -403,6 +403,7 @@ function startManaged(opts) {
     '--cli', config.cli,
   ];
   if (opts.resumeFrom) args.push('--resume', String(opts.resumeFrom));
+  if (opts.structured) args.push('--structured');
 
   let launchedBy = 'tmux';
   if (tmuxAvailable()) {

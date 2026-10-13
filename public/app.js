@@ -136,6 +136,14 @@ function buildBlocks(events) {
       const b = upsert(`a:${msg.id || e.uuid || e._seq}`, () => ({ kind: 'assistant', content: [] }));
       b.content = Array.isArray(msg.content) ? msg.content : [];
       b.model = msg.model || b.model;
+      // 原生 TUI 不会产生 control_request，计划直接从 tool_use 里认出来
+      for (const c of b.content) {
+        if (c && c.type === 'tool_use' && c.name === 'ExitPlanMode') {
+          const p = upsert(`plan:${c.id}`, () => ({ kind: 'plan', text: '', file: null, requestId: null }));
+          if (c.input && c.input.plan) p.text = c.input.plan;
+          if (c.input && c.input.planFilePath) p.file = c.input.planFilePath;
+        }
+      }
       continue;
     }
 
@@ -145,10 +153,20 @@ function buildBlocks(events) {
     }
 
     if (e.type === 'control_request' && e.request && e.request.subtype === 'can_use_tool') {
+      const tn = e.request.tool_name || 'tool';
+      // 计划审批单独渲染成计划卡片
+      if (tn === 'ExitPlanMode') {
+        upsert(`plan:${e.request_id}`, () => ({
+          kind: 'plan',
+          text: (e.request.input && e.request.input.plan) || '',
+          requestId: e.request_id,
+        }));
+        continue;
+      }
       upsert(`p:${e.request_id}`, () => ({
         kind: 'perm',
         requestId: e.request_id,
-        name: e.request.tool_name || 'tool',
+        name: tn,
         input: e.request.input,
         answered: false,
       }));
@@ -305,6 +323,17 @@ function render() {
           <div class="body"><pre><code>${esc(pretty(b.input))}</code></pre></div>
           ${res ? `<div class="body"><pre><code>${esc(res.slice(0, 8000))}</code></pre></div>` : ''}
         </div>`;
+    } else if (b.kind === 'plan') {
+      div.className = 'msg assistant';
+      div.innerHTML = `<div class="card plan">
+          <div class="head"><span class="name">实施计划</span><span class="badge">ExitPlanMode</span></div>
+          ${b.file ? `<div class="badge">${esc(b.file)}</div>` : ''}
+          <div class="body">${md(b.text || '（没有解析到计划内容）')}</div>
+          <div class="actions">
+            <button class="primary" data-plan-allow="${esc(b.requestId || '')}">批准并实施</button>
+            <button class="ghost" data-plan-deny="${esc(b.requestId || '')}">驳回，继续规划</button>
+          </div>
+        </div>`;
     } else if (b.kind === 'perm') {
       div.className = 'msg assistant';
       div.innerHTML = `<div class="card perm">
@@ -344,6 +373,12 @@ function render() {
   });
   messagesEl.querySelectorAll('[data-deny]').forEach((el) => {
     el.onclick = () => answerPerm(el.getAttribute('data-deny'), 'deny');
+  });
+  messagesEl.querySelectorAll('[data-plan-allow]').forEach((el) => {
+    el.onclick = () => decidePlan(el.getAttribute('data-plan-allow'), true);
+  });
+  messagesEl.querySelectorAll('[data-plan-deny]').forEach((el) => {
+    el.onclick = () => decidePlan(el.getAttribute('data-plan-deny'), false);
   });
 }
 
@@ -426,6 +461,8 @@ async function selectSession(id) {
   state.currentCwd = (data.session && data.session.cwd) || null;
   setModelSelects(data.session && data.session.model);
   if (data.session && data.session.permissionMode) $('sel-perm').value = data.session.permissionMode;
+  state.planMode = (data.session && data.session.permissionMode) === 'plan';
+  updatePlanButton();
   const kind = data.session && data.session.kind;
   $('key-row').hidden = !(kind === 'mirror' || kind === 'tui');
   render();
@@ -571,6 +608,59 @@ async function applyPermissionMode(mode) {
     alert(err.message);
   }
   await refreshSessions();
+}
+
+/**
+ * 批准 / 驳回计划。
+ * 有挂起的控制请求就回 control_response；没有（原生 TUI 的确认框不进事件流）
+ * 就退化为按键：Enter = 确认，Esc = 取消。
+ */
+async function decidePlan(requestId, approve) {
+  if (!state.activeId) return;
+  try {
+    if (requestId) {
+      await api(`/api/sessions/${state.activeId}/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId, behavior: approve ? 'allow' : 'deny' }),
+      });
+    } else {
+      await api(`/api/sessions/${state.activeId}/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: approve ? 'Enter' : 'Escape' }),
+      });
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+/** 一键进入 / 退出计划模式 */
+async function togglePlanMode() {
+  if (!state.activeId) return alert('先打开一个对话');
+  const on = !state.planMode;
+  try {
+    await api(`/api/sessions/${state.activeId}/plan-mode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on }),
+    });
+    state.planMode = on;
+    updatePlanButton();
+    await refreshSessions();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function updatePlanButton() {
+  const b = $('btn-plan');
+  if (!b) return;
+  b.textContent = state.planMode ? '退出计划模式' : '进入计划模式';
+  b.title = state.planMode
+    ? '当前处于计划模式：只规划不改文件，实施前会出计划等你批准'
+    : '进入计划模式：让模型先给方案，批准后再动手';
 }
 
 /** 两个模型下拉框保持同步 */
@@ -958,6 +1048,7 @@ async function boot() {
       await handleSlash(el.getAttribute('data-cmd'));
     };
   });
+  $('btn-plan').onclick = () => togglePlanMode();
 
   state.events = [];
   render();

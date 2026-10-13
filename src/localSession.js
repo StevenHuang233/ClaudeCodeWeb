@@ -278,6 +278,41 @@ class LocalSession extends EventEmitter {
     return true;
   }
 
+  /**
+   * 一键进入 / 退出计划模式。
+   * 结构化模式有 set_permission_mode 指令直接切；
+   * 原生 TUI 没有对应斜杠命令，只能 Shift+Tab 循环，所以循环按到目标模式为止。
+   */
+  ensurePlanMode(on) {
+    if (this.kind === 'managed') return this.setPermissionMode(on ? 'plan' : 'acceptEdits');
+    if (this.kind !== 'tui' && this.kind !== 'mirror') {
+      throw new Error('该会话不支持切换计划模式');
+    }
+    const want = on ? 'plan mode on' : 'accept edits on';
+    for (let i = 0; i < 8; i++) {
+      let shot = '';
+      try {
+        shot = execFileSync('tmux', ['capture-pane', '-p', '-t', this.tmuxTarget], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+      } catch (err) {
+        throw new Error(`抓屏失败: ${err.message}`);
+      }
+      if (shot.includes(want)) {
+        this.permissionMode = on ? 'plan' : 'acceptEdits';
+        return true;
+      }
+      try {
+        execFileSync('tmux', ['send-keys', '-t', this.tmuxTarget, 'BTab'], { stdio: 'ignore' });
+        execFileSync('sleep', ['0.4']);
+      } catch (err) {
+        throw new Error(`send-keys 失败: ${err.message}`);
+      }
+    }
+    throw new Error(`切不到「${want}」，请在终端手动按 Shift+Tab`);
+  }
+
   /** 镜像模式下从网页敲按键（白名单，避免把任意字符串当 tmux key 名执行） */
   sendKey(key) {
     if (this.kind !== 'mirror' && this.kind !== 'tui') throw new Error('仅镜像 / 原生 TUI 会话支持按键');

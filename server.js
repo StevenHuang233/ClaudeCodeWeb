@@ -265,6 +265,7 @@ async function handleApi(req, res, url) {
         model: String(body.model || config.defaultModel),
         permissionMode: String(body.permissionMode || config.permissionMode),
         resumeFrom: body.resumeFrom || null,
+        structured: !!body.structured,
       });
       return sendJSON(res, 201, Object.assign({ resumeFrom: body.resumeFrom || null }, started));
     } catch (err) {
@@ -444,6 +445,19 @@ async function handleApi(req, res, url) {
       return sendJSON(res, 400, { error: err.message });
     }
     return sendJSON(res, 202, { ok: true });
+  }
+
+  if (pathname.endsWith('/plan-mode') && method === 'POST') {
+    const body = await readBody(req);
+    if (typeof s.ensurePlanMode !== 'function') {
+      return sendJSON(res, 400, { error: '该会话不支持切换计划模式' });
+    }
+    try {
+      s.ensurePlanMode(body.on !== false);
+    } catch (err) {
+      return sendJSON(res, 400, { error: err.message });
+    }
+    return sendJSON(res, 202, { ok: true, on: body.on !== false });
   }
 
   if (pathname.endsWith('/model') && method === 'POST') {
