@@ -566,7 +566,13 @@ async function loadLocal() {
   if (!foreign.length) {
     const p = document.createElement('div');
     p.className = 'hint';
-    p.textContent = data.tmuxAvailable ? '没检测到其他 tc 进程' : '本机没有 tmux';
+    p.textContent = data.tmuxAvailable ? '没有可接管的（tmux 里没跑 tc）' : '本机没有 tmux';
+    fl.appendChild(p);
+  }
+  if (data.unattachable > 0) {
+    const p = document.createElement('div');
+    p.className = 'hint';
+    p.textContent = `另有 ${data.unattachable} 个 tc 不在 tmux 里，无法接管`;
     fl.appendChild(p);
   }
 }

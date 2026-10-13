@@ -193,10 +193,15 @@ async function handleApi(req, res, url) {
     }
     history.sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
 
+    // 只列能真正接管的（在 tmux 窗格里的）。不在 tmux 里的只能看个数，避免刷屏
+    const allForeign = local.listForeign();
+    const foreign = allForeign.filter((f) => f.attachable);
+
     return sendJSON(res, 200, {
       active,
       history: history.slice(0, 40),
-      foreign: local.listForeign(),
+      foreign,
+      unattachable: allForeign.length - foreign.length,
       tmuxAvailable: local.tmuxAvailable(),
       runDir: config.runDir,
     });
