@@ -106,6 +106,30 @@ console.log(dim(`[tc-run] ${name} · ${cwd} · ${model} · pid=${process.pid}${r
 console.log(dim(`[tc-run] 事件流: ${logPath}`));
 console.log(dim('[tc-run] 直接打字发消息，Ctrl+C 结束\n'));
 
+// --tui：跑原生交互界面（就是平时直接敲 tclaude 看到的那个页面）。
+// 代价是拿不到结构化事件流，Web 只能做屏幕镜像。
+const tuiMode = argv.includes('--tui');
+if (tuiMode) {
+  meta.mode = 'tui';
+  saveMeta();
+  console.log(dim(`[tc-run] 原生交互模式 · ${name} · ${cwd}`));
+  console.log(dim('[tc-run] Web 端请用「镜像」方式接入这个会话\n'));
+  const c = spawn(cli, resumeFrom ? ['--resume', resumeFrom] : [], { cwd, stdio: 'inherit' });
+  c.on('exit', (code) => {
+    meta.exitedAt = Date.now();
+    saveMeta();
+    process.exit(code == null ? 1 : code);
+  });
+  process.on('SIGINT', () => {
+    try {
+      c.kill('SIGTERM');
+    } catch (err) {
+      /* ignore */
+    }
+  });
+  return;
+}
+
 const cliArgs = [
   '-p',
   '--input-format', 'stream-json',
@@ -170,6 +194,22 @@ if (process.stdin.isTTY) {
 /* ---------- 输出：原始事件落盘 + 终端美化 ---------- */
 const logStream = fs.createWriteStream(logPath, { flags: 'a' });
 
+function shortInput(input) {
+  if (!input) return '';
+  if (typeof input === 'string') return input.slice(0, 120);
+  const v = input.command || input.file_path || input.pattern || input.description || input.url || '';
+  return String(v).slice(0, 120);
+}
+
+function resultText(c) {
+  const x = c && c.content;
+  if (typeof x === 'string') return x;
+  if (Array.isArray(x)) {
+    return x.map((y) => (typeof y === 'string' ? y : y && y.text ? y.text : '')).filter(Boolean).join(' ⏎ ');
+  }
+  return '';
+}
+
 function pretty(line) {
   let e;
   try {
@@ -179,14 +219,40 @@ function pretty(line) {
   }
   if (e.type === 'assistant') {
     for (const c of (e.message && e.message.content) || []) {
-      if (c.type === 'text') process.stdout.write(c.text + '\n');
-      else if (c.type === 'tool_use') {
-        process.stdout.write(accent(`⟦${c.name}⟧ `) + JSON.stringify(c.input).slice(0, 400) + '\n');
+      if (c.type === 'text') {
+        if (c.text) process.stdout.write(c.text + '\n');
+      } else if (c.type === 'thinking') {
+        const t = String(c.thinking || '').trim();
+        if (t) {
+          process.stdout.write(
+            dim(`✢ 思考 ${t.length} 字：${t.slice(0, 160).replace(/\n/g, ' ')}${t.length > 160 ? '…' : ''}\n`)
+          );
+        }
+      } else if (c.type === 'tool_use') {
+        const arg = shortInput(c.input);
+        process.stdout.write(accent(`⏺ ${c.name}`) + (arg ? dim(` (${arg})`) : '') + '\n');
+      }
+    }
+  } else if (e.type === 'user') {
+    // 工具结果是作为 user 消息回传的
+    const content = e.message && e.message.content;
+    if (Array.isArray(content)) {
+      for (const c of content) {
+        if (c && c.type === 'tool_result') {
+          const txt = resultText(c).replace(/\n/g, ' ⏎ ');
+          const tag = c.is_error ? '✗ 出错' : '⎿ 结果';
+          process.stdout.write(dim(`  ${tag}: ${txt.slice(0, 300)}${txt.length > 300 ? '…' : ''}\n`));
+        }
       }
     }
   } else if (e.type === 'result') {
+    const u = e.usage || {};
     process.stdout.write(
-      dim(`\n✓ 完成 · $${(e.total_cost_usd || 0).toFixed(4)} · ${e.duration_ms || 0}ms · ${e.num_turns || 0} 轮\n\n`)
+      dim(
+        `\n✓ 完成 · $${(e.total_cost_usd || 0).toFixed(4)} · ${((e.duration_ms || 0) / 1000).toFixed(1)}s · ${
+          e.num_turns || 0
+        } 轮 · in ${u.input_tokens || 0}/out ${u.output_tokens || 0}\n\n`
+      )
     );
   } else if (e.type === 'system' && e.subtype === 'init') {
     if (e.session_id && !meta.sessionId) {

@@ -504,9 +504,11 @@ async function loadLocal() {
     const bound = state.boundName === m.name;
     d.className = 'item' + (bound ? ' active' : '');
     d.innerHTML = `<div class="t"><b>${esc(m.name)}</b><span>${bound ? 'Web 已接入' : '运行中'}</span></div>
-      <div class="s">${esc(m.model || '')} · ${esc(m.cwd || '')}</div>
+      <div class="s">${esc(m.model || '')} · ${esc(m.cwd || '')}${m.mode === 'tui' ? ' · 原生 TUI（Web 镜像）' : ''}</div>
       <div class="s cmd">${esc(m.attachCmd || '（无 tmux）')}</div>`;
-    d.title = '点击在 Web 打开这个对话（与终端同一个进程）';
+    d.title = m.mode === 'tui'
+      ? '原生交互界面：Web 只能镜像屏幕，没有工具详情'
+      : '点击在 Web 打开这个对话（与终端同一个进程）';
     d.onclick = () => bindManaged(m.name);
     const btn = document.createElement('button');
     btn.className = 'ghost small';

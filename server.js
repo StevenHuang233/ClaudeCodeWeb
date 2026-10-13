@@ -246,6 +246,22 @@ async function handleApi(req, res, url) {
       const meta = items.find((m) => m.name === body.source.name);
       if (!meta) return sendJSON(res, 404, { error: `找不到本地会话 ${body.source.name}` });
       if (!meta.alive) return sendJSON(res, 400, { error: `本地会话 ${body.source.name} 已退出` });
+
+      // 原生交互模式（--tui）没有事件流，只能按屏幕镜像接入
+      if (meta.mode === 'tui') {
+        if (!meta.tmuxTarget) return sendJSON(res, 400, { error: '该会话不在 tmux 里，无法镜像' });
+        const m = new LocalSession({
+          kind: 'mirror',
+          tmuxTarget: meta.tmuxTarget,
+          pid: meta.pid,
+          cwd: meta.cwd,
+          title: `${meta.name}（原生 TUI）`,
+        });
+        attachSession(m);
+        m.start();
+        return sendJSON(res, 201, { session: m.toJSON() });
+      }
+
       const s = new LocalSession({
         kind: 'managed',
         name: meta.name,
