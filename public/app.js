@@ -13,6 +13,33 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+/**
+ * 复制文本。用 http://<IP> 访问时不是安全上下文，navigator.clipboard 不可用，
+ * 所以要有 execCommand 回退，再不行就弹窗让用户手动复制。
+ */
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (err) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    ok ? resolve() : reject(new Error('浏览器禁止了自动复制'));
+  });
+}
+
 /** 安全绑定：元素缺失时只告警，不让整个页面初始化失败 */
 function on(id, ev, fn) {
   const el = $(id);
@@ -1094,9 +1121,9 @@ async function loadLocal() {
       cp.title = `复制「${m.attachCmd}」，在 CodeBuddy 的终端里粘贴执行即可看到同一个对话`;
       cp.onclick = (ev) => {
         ev.stopPropagation();
-        navigator.clipboard.writeText(m.attachCmd).then(
+        copyText(m.attachCmd).then(
           () => (cp.textContent = '已复制 ✓'),
-          () => alert('复制失败，请手动选中：' + m.attachCmd)
+          () => prompt('自动复制被浏览器拦了，请手动复制：', m.attachCmd)
         );
         setTimeout(() => (cp.textContent = '复制终端命令'), 1500);
       };
