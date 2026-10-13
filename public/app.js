@@ -539,8 +539,30 @@ function exitReview() {
 }
 
 async function stopLocal(name) {
-  if (!confirm(`结束本地会话 ${name}？（会杀掉对应的 tc 进程）`)) return;
+  if (!confirm(`结束「${name}」？\n会杀掉对应的 tc 进程和 tmux 会话，记录会保留在「归档」里，之后还能恢复。`)) return;
   await api(`/api/local-sessions/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  await loadLocal();
+}
+
+/** 彻底删除：连记录一起删，不进归档 */
+async function purgeLocal(name) {
+  if (!confirm(`彻底删除「${name}」？\n会杀掉进程并删除它的全部记录，不可恢复。`)) return;
+  await api(`/api/local-sessions/${encodeURIComponent(name)}?purge=1`, { method: 'DELETE' });
+  if (state.boundName === name) {
+    state.boundName = null;
+    state.events = [];
+    render();
+  }
+  await loadLocal();
+}
+
+/** 删除一条归档 */
+async function deleteArchive(h) {
+  if (!confirm(`删除归档 ${String(h.sessionId).slice(0, 8)}？\n对应的会话记录文件会被删除，不可恢复。`)) return;
+  await api(`/api/history/${encodeURIComponent(h.sessionId)}?cwd=${encodeURIComponent(h.cwd || '')}`, {
+    method: 'DELETE',
+  });
+  if (state.review && state.review.sessionId === h.sessionId) exitReview();
   await loadLocal();
 }
 
@@ -571,12 +593,21 @@ async function loadLocal() {
     d.onclick = () => bindManaged(m.name);
     const btn = document.createElement('button');
     btn.className = 'ghost small';
-    btn.textContent = '结束';
+    btn.textContent = '结束（归档）';
     btn.onclick = (ev) => {
       ev.stopPropagation();
       stopLocal(m.name);
     };
     d.appendChild(btn);
+    const del = document.createElement('button');
+    del.className = 'ghost small danger';
+    del.textContent = '删除';
+    del.title = '杀掉进程并删除全部记录，不进归档';
+    del.onclick = (ev) => {
+      ev.stopPropagation();
+      purgeLocal(m.name);
+    };
+    d.appendChild(del);
     if (m.attachCmd) {
       const cp = document.createElement('button');
       cp.className = 'ghost small';
@@ -625,6 +656,14 @@ async function loadLocal() {
       });
     };
     d.appendChild(open);
+    const del = document.createElement('button');
+    del.className = 'ghost small danger';
+    del.textContent = '删除';
+    del.onclick = (ev) => {
+      ev.stopPropagation();
+      deleteArchive(h);
+    };
+    d.appendChild(del);
     hl.appendChild(d);
   }
   if (!history.length) {

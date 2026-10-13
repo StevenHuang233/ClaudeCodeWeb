@@ -271,7 +271,15 @@ async function handleApi(req, res, url) {
 
   const stopMatch = pathname.match(/^\/api\/local-sessions\/([\w.@-]+)$/);
   if (stopMatch && method === 'DELETE') {
-    return sendJSON(res, 200, local.stopManaged(stopMatch[1]));
+    // purge=1 彻底删除（不进归档），默认只是结束并归档
+    const purge = url.searchParams.get('purge') === '1';
+    return sendJSON(res, 200, purge ? local.purgeManaged(stopMatch[1]) : local.stopManaged(stopMatch[1]));
+  }
+
+  const delHist = pathname.match(/^\/api\/history\/([\w.:-]+)$/);
+  if (delHist && method === 'DELETE') {
+    const cwd = url.searchParams.get('cwd') || config.defaultCwd;
+    return sendJSON(res, 200, local.deleteHistory(delHist[1], cwd));
   }
 
   /* ------------------------------------------------------------------ */
@@ -302,6 +310,7 @@ async function handleApi(req, res, url) {
           pid: meta.pid,
           cwd: meta.cwd,
           model: meta.model,
+          startOffset: meta.startOffset || 0,
         });
         attachSession(t);
         t.start();

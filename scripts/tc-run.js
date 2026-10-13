@@ -123,6 +123,47 @@ if (tuiMode) {
   if (resumeFrom) tuiArgs.push('--resume', resumeFrom);
   const c = spawn(cli, tuiArgs, { cwd, stdio: 'inherit' });
 
+  // 交互式 tclaude 默认会续接该目录下最近一次会话（CLI 没有 --new），
+  // 所以「新建对话」要在起来后发一条 /clear 清掉上下文，否则会带着上次的聊天记录。
+  if (!resumeFrom) {
+    let cleared = false;
+    let tries = 0;
+    const iv = setInterval(() => {
+      if (cleared || ++tries > 30) {
+        clearInterval(iv);
+        return;
+      }
+      let shot = '';
+      try {
+        shot = execFileSync('tmux', ['capture-pane', '-p', '-t', name], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+      } catch (err) {
+        return; // 还没起来
+      }
+      if (!/❯|>\s*$/m.test(shot)) return; // 等到输入提示符出现
+      try {
+        execFileSync('tmux', ['send-keys', '-t', name, '-l', '/clear'], { stdio: 'ignore' });
+        execFileSync('tmux', ['send-keys', '-t', name, 'Enter'], { stdio: 'ignore' });
+        cleared = true;
+        clearInterval(iv);
+        // 记下基线：这之后的内容才属于本次对话
+        setTimeout(() => {
+          try {
+            meta.startOffset = meta.transcriptPath ? fs.statSync(meta.transcriptPath).size : 0;
+          } catch (err) {
+            meta.startOffset = 0;
+          }
+          meta.cleared = true;
+          saveMeta();
+        }, 2000);
+      } catch (err) {
+        /* 下一轮再试 */
+      }
+    }, 1000);
+  }
+
   // 找到 Claude Code 正在写的会话记录文件，Web 靠它渲染
   const projDir = path.join(
     process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.tclaude'),

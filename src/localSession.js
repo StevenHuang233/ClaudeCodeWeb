@@ -46,6 +46,9 @@ class LocalSession extends EventEmitter {
       this.tmuxTarget = opts.tmuxTarget || (opts.name ? `${opts.name}:0.0` : null);
       this.pid = opts.pid || null;
       this.title = this.title || this.name;
+      // 新建对话会先 /clear，之前的内容不算这次对话的
+      this._startOffset = Number(opts.startOffset) || 0;
+      this._startFile = this.transcriptPath;
     } else if (this.kind === 'managed') {
       this.name = opts.name;
       this.logPath = opts.logPath;
@@ -77,6 +80,7 @@ class LocalSession extends EventEmitter {
         subtype: 'attached',
         message: `已接入 ${this.name}（终端是原生 TUI，Web 读它的会话记录，实时同步）`,
       });
+      this._offset = this._startOffset;
       this._timer = setInterval(() => this._tail(), TAIL_INTERVAL);
       this._tail();
       return this;

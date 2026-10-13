@@ -112,6 +112,80 @@ function findTranscript(cwd, sessionId) {
   return best ? path.join(dir, best) : null;
 }
 
+/** 严格匹配某个 sessionId 的记录文件（删除时用，绝不回退到「最新的那个」） */
+function findTranscriptExact(cwd, sessionId) {
+  if (!sessionId) return null;
+  const id = String(sessionId);
+  const dir = projectDir(cwd);
+  let files = [];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+  } catch (err) {
+    return null;
+  }
+  for (const f of files) {
+    if (f.replace(/\.jsonl$/, '') === id || f.startsWith(id.slice(0, 8))) return path.join(dir, f);
+  }
+  for (const f of files) {
+    try {
+      const fd = fs.openSync(path.join(dir, f), 'r');
+      const buf = Buffer.alloc(8192);
+      const n = fs.readSync(fd, buf, 0, buf.length, 0);
+      fs.closeSync(fd);
+      const o = JSON.parse(buf.toString('utf8', 0, n).split('\n')[0]);
+      if (o && (o.sessionId === id || o.session_id === id)) return path.join(dir, f);
+    } catch (err) {
+      /* 继续 */
+    }
+  }
+  return null;
+}
+
+/** 彻底删除一个本地会话（结束进程 + 清掉 meta/日志/fifo，不进归档） */
+function purgeManaged(name) {
+  const res = stopManaged(name);
+  const dir = ensureRunDir();
+  const safe = String(name).replace(/[^A-Za-z0-9_.-]/g, '');
+  const removed = [];
+  for (const f of [`${safe}.meta.json`, `${safe}.jsonl`, `${safe}.fifo`]) {
+    try {
+      fs.unlinkSync(path.join(dir, f));
+      removed.push(f);
+    } catch (err) {
+      /* 可能本来就没有 */
+    }
+  }
+  return Object.assign({ removed }, res);
+}
+
+/** 删除一条归档（记录文件 + 对应托管会话的日志/meta） */
+function deleteHistory(sessionId, cwd) {
+  const removed = [];
+  const p = findTranscriptExact(cwd, sessionId);
+  if (p) {
+    try {
+      fs.unlinkSync(p);
+      removed.push(p);
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  for (const m of listManaged()) {
+    if (m.sessionId === sessionId || m.name === sessionId) {
+      for (const f of [m.logPath, m.fifoPath, path.join(config.runDir, `${m.name}.meta.json`)]) {
+        if (!f) continue;
+        try {
+          fs.unlinkSync(f);
+          removed.push(f);
+        } catch (err) {
+          /* ignore */
+        }
+      }
+    }
+  }
+  return { removed };
+}
+
 /** 从事件日志里找 Claude 的 session_id，历史记录靠它 --resume 恢复 */
 function sessionIdFromLog(logPath) {
   if (!logPath) return null;
@@ -375,6 +449,9 @@ module.exports = {
   tmuxPanes,
   sessionIdFromLog,
   findTranscript,
+  findTranscriptExact,
   projectDir,
+  purgeManaged,
+  deleteHistory,
   isAlive,
 };
