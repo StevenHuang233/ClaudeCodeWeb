@@ -6,6 +6,32 @@ const path = require('path');
 
 const HOME = os.homedir();
 
+/**
+ * 极简 .env 加载：只补环境里没有的变量，不覆盖已有的。
+ * .env 已被 .gitignore 忽略，令牌不要提交进仓库。
+ */
+function loadDotEnv() {
+  const file = path.join(__dirname, '..', '.env');
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    return;
+  }
+  for (const line of raw.split('\n')) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!m) continue;
+    if (m[1] === 'CCWEB_TOKEN' && !String(m[2]).trim()) continue; // 留空视为不启用
+    let val = m[2].trim();
+    if (val.length >= 2 && ((val[0] === '"' && val.endsWith('"')) || (val[0] === "'" && val.endsWith("'")))) {
+      val = val.slice(1, -1);
+    }
+    if (process.env[m[1]] === undefined) process.env[m[1]] = val;
+  }
+}
+
+loadDotEnv();
+
 // tclaude 的配置目录是 ~/.tclaude（不是 ~/.claude）
 const TCLAUDE_HOME = process.env.TCLAUDE_HOME || path.join(HOME, '.tclaude');
 

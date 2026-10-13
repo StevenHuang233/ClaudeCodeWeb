@@ -39,6 +39,34 @@ tclaude login        # tclaude：OA 浏览器登录
 tclaude daemon status
 ```
 
+### 从其他机器访问
+
+服务默认只听 `127.0.0.1`，别的机器访问不到。要直连需同时做两件事：
+
+```bash
+cd ClaudeCodeWeb
+cat > .env <<'EOF'
+CCWEB_HOST=0.0.0.0
+CCWEB_PORT=18787
+CCWEB_TOKEN=换成一串随机字符串
+CCWEB_CWD=/data/workspace
+EOF
+./scripts/start.sh
+```
+
+然后浏览器打开 `http://<机器IP>:18787/?token=<你的token>`。
+
+- `.env` 会在启动时自动加载（不覆盖已有的环境变量），且已被 `.gitignore` 忽略，令牌不会进仓库
+- **不带 token 的请求一律 401**；页面首次访问也能直接弹窗输入 token，输入后存在浏览器 localStorage
+- `CCWEB_HOST=0.0.0.0` 但没设 `CCWEB_TOKEN` 时，服务会拒绝启动
+
+另一种更省事的做法是不改监听地址，用 SSH 端口转发：
+
+```bash
+ssh -L 18787:127.0.0.1:18787 <user>@<机器IP>
+# 然后访问 http://127.0.0.1:18787
+```
+
 ## 调试请务必用最便宜的模型
 
 同一条请求（"只回复两个字：收到"）实测单次花费：

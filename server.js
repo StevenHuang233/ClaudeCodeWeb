@@ -311,6 +311,13 @@ const server = http.createServer((req, res) => {
   serveStatic(req, res, url.pathname);
 });
 
+// 安全兜底：对外暴露时必须有令牌，否则拒绝启动
+const PUBLIC_BIND = config.host === '0.0.0.0' || config.host === '::';
+if (PUBLIC_BIND && !config.token) {
+  console.error('拒绝启动：CCWEB_HOST=0.0.0.0 时必须设置 CCWEB_TOKEN（该服务可驱动 AI 执行命令）');
+  process.exit(1);
+}
+
 server.listen(config.port, config.host, () => {
   const shown = config.host === '0.0.0.0' ? 'localhost' : config.host;
   console.log(`ClaudeCodeWeb 已启动: http://${shown}:${config.port}`);
