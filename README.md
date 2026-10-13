@@ -243,6 +243,19 @@ Web 输入框 → tmux send-keys 敲进 TUI → TUI 处理 → 写会话记录 �
 | 原生 TUI / 镜像 | **就地生效** —— 发 `/model <name>` 斜杠命令，终端里能看到 `Set model to ...` |
 | 结构化 | 不支持就地切换（CLI 的 stream-json 协议没有 `set_model` 指令），会提示**用新模型重开**：新起一个终端会话 `--resume`，上下文保留 |
 
+### 计划模式（plan mode）
+
+| 能力 | 实现 |
+| --- | --- |
+| 一键进入 / 退出 | cmd 行上的「进入计划模式」按钮。结构化走 `set_permission_mode`；原生 TUI 没有对应斜杠命令，改为循环按 Shift+Tab，直到抓屏出现 `plan mode on` / `accept edits on` |
+| 计划单独渲染 | 从 `ExitPlanMode` 的 `tool_use` 里取 `input.plan` 渲染成计划卡片，并显示 `planFilePath` |
+| 批准 / 驳回 | 有挂起的 `control_request` 就回 `control_response`；TUI 的确认框不进事件流，退化为按键：**Enter = Yes**（默认选中 `1. Yes, auto-accept edits`）、**Esc = 取消** |
+
+实测：一键切换 `accept edits on` ⇄ `plan mode on` 双向通过；真实跑通一次计划流程，取到 951 字符的计划正文。
+
+> 注意：这个环境下 tc 会自动放行工具，所以结构化模式下**没有**出现 `control_request`（权限卡片用不上），
+> 计划审批实际走的是 TUI 那条按键路径。若你的账号有权限审批，两种路径都会生效。
+
 ### Web 上做成了 UI 控件的命令
 
 | 控件 | 位置 | 转成什么命令 | 备注 |
