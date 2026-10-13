@@ -171,6 +171,7 @@ function deleteHistory(sessionId, cwd) {
     }
   }
   for (const m of listManaged()) {
+    if (m.alive) continue; // 运行中的对话不能被「删历史」连带删掉
     if (m.sessionId === sessionId || m.name === sessionId) {
       for (const f of [m.logPath, m.fifoPath, path.join(config.runDir, `${m.name}.meta.json`)]) {
         if (!f) continue;
