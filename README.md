@@ -22,13 +22,13 @@
 ```bash
 cd ClaudeCodeWeb
 ./scripts/start.sh
-# 打开 http://127.0.0.1:8787
+# 打开 http://127.0.0.1:18787
 ```
 
 或者：
 
 ```bash
-node server.js          # 默认 127.0.0.1:8787
+node server.js          # 默认 127.0.0.1:18787
 CCWEB_PORT=9000 node server.js
 ```
 
@@ -64,7 +64,7 @@ tclaude daemon status
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `CCWEB_HOST` | `127.0.0.1` | 监听地址 |
-| `CCWEB_PORT` | `8787` | 端口 |
+| `CCWEB_PORT` | `18787` | 端口 |
 | `CCWEB_TOKEN` | 空 | 设置后所有接口都要带 token（含 SSE 的 `?token=`） |
 | `CCWEB_CLI` | `tclaude` | 要接的 CLI，可改 `claude` |
 | `CCWEB_MODEL` | `claude-haiku-4-5` | 默认模型（最便宜） |

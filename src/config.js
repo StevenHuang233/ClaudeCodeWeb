@@ -46,7 +46,7 @@ function parseRoots(raw) {
 
 const config = {
   host: process.env.CCWEB_HOST || '127.0.0.1',
-  port: Number(process.env.CCWEB_PORT || 8787),
+  port: Number(process.env.CCWEB_PORT || 18787),
   // 设了之后所有接口都要带这个 token，配合非 localhost 暴露时必须打开
   token: process.env.CCWEB_TOKEN || '',
   cli: process.env.CCWEB_CLI || 'tclaude',
