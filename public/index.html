@@ -57,8 +57,16 @@
 
     <div id="messages" class="messages"></div>
 
+    <div id="cmd-row" class="cmd-row">
+      <span>快捷命令：</span>
+      <button type="button" class="ghost small" data-cmd="/compact" title="压缩上下文，省 token">压缩上下文</button>
+      <button type="button" class="ghost small" data-cmd="/clear" title="清空上下文重新开始">清空</button>
+      <button type="button" class="ghost small" data-cmd="/usage" title="查看用量与花费">用量</button>
+      <button type="button" class="ghost small" data-cmd="/doctor" title="诊断 CLI 环境">诊断</button>
+    </div>
+
     <div id="key-row" class="key-row" hidden>
-      <span>快捷按键（镜像模式）：</span>
+      <span>快捷按键（镜像 / 原生 TUI）：</span>
       <button type="button" class="ghost small" data-key="Up">↑</button>
       <button type="button" class="ghost small" data-key="Down">↓</button>
       <button type="button" class="ghost small" data-key="Enter">Enter</button>
@@ -67,6 +75,7 @@
       <button type="button" class="ghost small" data-key="y">y</button>
       <button type="button" class="ghost small" data-key="n">n</button>
       <button type="button" class="ghost small" data-key="s" title="/model 选择器里用它＝仅本次会话生效，不改全局默认">s（仅本次）</button>
+      <button type="button" class="ghost small" data-key="BTab" title="Shift+Tab：在 TUI 里切换权限模式">Shift+Tab</button>
       <button type="button" class="ghost small" data-key="C-c">Ctrl-C</button>
     </div>
 
@@ -74,6 +83,12 @@
       <textarea id="input" rows="2" placeholder="Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
       <div class="composer-actions">
         <select id="chat-model" class="chat-model" title="切换当前对话的模型：会转成 /model <名字> 敲进终端"></select>
+        <select id="chat-effort" class="chat-model" title="思考强度：转成 /effort <等级> 敲进终端">
+          <option value="">effort</option>
+          <option value="low">effort: low</option>
+          <option value="medium">effort: medium</option>
+          <option value="high">effort: high</option>
+        </select>
         <button type="button" id="btn-stop" class="ghost">停止</button>
         <button type="submit" id="btn-send" class="primary">发送</button>
       </div>

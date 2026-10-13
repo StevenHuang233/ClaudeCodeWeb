@@ -260,6 +260,8 @@ function render() {
   $('btn-send').disabled = ro;
   $('btn-stop').disabled = ro;
   $('chat-model').disabled = ro || !state.activeId;
+  $('chat-effort').disabled = ro || !state.activeId;
+  $('cmd-row').querySelectorAll('button').forEach((b) => (b.disabled = ro || !state.activeId));
 
   for (const b of blocks) {
     const div = document.createElement('div');
@@ -423,6 +425,7 @@ async function selectSession(id) {
   state.currentSessionId = (data.session && data.session.cliSessionId) || null;
   state.currentCwd = (data.session && data.session.cwd) || null;
   setModelSelects(data.session && data.session.model);
+  if (data.session && data.session.permissionMode) $('sel-perm').value = data.session.permissionMode;
   const kind = data.session && data.session.kind;
   $('key-row').hidden = !(kind === 'mirror' || kind === 'tui');
   render();
@@ -492,6 +495,11 @@ async function handleSlash(text) {
     return;
   }
 
+  if (cmd === 'compact' || cmd === 'usage' || cmd === 'doctor') {
+    alert(`「/${cmd}」只有原生 TUI 模式支持（会弹出交互面板）。\n当前是结构化模式。`);
+    return;
+  }
+
   if (cmd === 'clear') {
     if (!confirm('结构化模式无法就地清空上下文。要开一个全新的对话吗？')) return;
     await startLocal({ cwd: state.currentCwd || undefined });
@@ -548,6 +556,21 @@ function tsName() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
   return `tc-${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+/** 切换当前会话的权限模式：结构化走协议指令，原生 TUI 只能 Shift+Tab */
+async function applyPermissionMode(mode) {
+  if (!mode || !state.activeId || state.review) return;
+  try {
+    await api(`/api/sessions/${state.activeId}/permission-mode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+  } catch (err) {
+    alert(err.message);
+  }
+  await refreshSessions();
 }
 
 /** 两个模型下拉框保持同步 */
@@ -919,6 +942,22 @@ async function boot() {
   $('inp-cwd').addEventListener('change', loadLocal);
   $('sel-model').addEventListener('change', () => changeModel($('sel-model').value).catch((err) => alert(err.message)));
   $('chat-model').addEventListener('change', () => changeModel($('chat-model').value).catch((err) => alert(err.message)));
+  $('chat-effort').addEventListener('change', async () => {
+    const v = $('chat-effort').value;
+    $('chat-effort').value = '';
+    if (!v) return;
+    if (!state.activeId) return alert('先打开一个对话');
+    await handleSlash(`/effort ${v}`);
+  });
+  $('sel-perm').addEventListener('change', () =>
+    applyPermissionMode($('sel-perm').value).catch((err) => alert(err.message))
+  );
+  $('cmd-row').querySelectorAll('[data-cmd]').forEach((el) => {
+    el.onclick = async () => {
+      if (!state.activeId) return alert('先打开一个对话');
+      await handleSlash(el.getAttribute('data-cmd'));
+    };
+  });
 
   state.events = [];
   render();

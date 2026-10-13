@@ -281,8 +281,8 @@ class LocalSession extends EventEmitter {
   /** 镜像模式下从网页敲按键（白名单，避免把任意字符串当 tmux key 名执行） */
   sendKey(key) {
     if (this.kind !== 'mirror' && this.kind !== 'tui') throw new Error('仅镜像 / 原生 TUI 会话支持按键');
-    // s = /model 选择器里的「仅本次会话生效」，不会改掉全局默认
-    const allowed = ['Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BSpace', 'Space', 'C-c', 'C-d', 'y', 'n', 's'];
+    // s = /model 选择器里的「仅本次会话生效」；BTab = Shift+Tab，TUI 里用来切权限模式
+    const allowed = ['Enter', 'Escape', 'Up', 'Down', 'Left', 'Right', 'Tab', 'BTab', 'BSpace', 'Space', 'C-c', 'C-d', 'y', 'n', 's'];
     if (!allowed.includes(key)) throw new Error(`不支持的按键: ${key}`);
     try {
       execFileSync('tmux', ['send-keys', '-t', this.tmuxTarget, key], { stdio: 'ignore' });
@@ -299,8 +299,28 @@ class LocalSession extends EventEmitter {
     throw new Error('本地绑定模式下暂不支持权限审批，请用 acceptEdits 等自动模式');
   }
 
-  setPermissionMode() {
-    throw new Error('本地绑定模式不支持运行时切换权限模式');
+  setPermissionMode(mode) {
+    if (this.kind === 'managed') {
+      // stream-json 协议支持 set_permission_mode 控制指令，写进 FIFO
+      try {
+        fs.appendFileSync(
+          this.fifoPath,
+          JSON.stringify({
+            type: 'control_request',
+            request_id: `perm-${randomUUID()}`,
+            request: { subtype: 'set_permission_mode', mode },
+          }) + '\n'
+        );
+      } catch (err) {
+        throw new Error(`写入 FIFO 失败: ${err.message}`);
+      }
+      this.permissionMode = mode;
+      return true;
+    }
+    if (this.kind === 'tui') {
+      throw new Error('原生 TUI 下请在终端按 Shift+Tab 切换权限模式（Web 按键条已提供该键）');
+    }
+    throw new Error('镜像模式不支持改权限模式');
   }
 
   /** 只是断开 Web 端的绑定，不会杀掉本地的 tc 进程 */

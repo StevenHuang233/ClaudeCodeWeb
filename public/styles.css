@@ -207,6 +207,18 @@ details.fold > summary::before { content: '▸ '; }
 details.fold[open] > summary::before { content: '▾ '; }
 details.fold > .list { margin-top: 6px; }
 
+.cmd-row {
+  padding: 8px 20px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cmd-row button { padding: 3px 10px; font-size: 12px; }
+.cmd-row button:disabled { opacity: .5; cursor: not-allowed; }
+
 .key-row {
   border-top: 1px solid var(--border);
   padding: 8px 20px 0;
